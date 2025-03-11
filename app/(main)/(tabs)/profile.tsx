@@ -13,10 +13,11 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 
-import { Theme } from '../../constants/Theme';
-import { Card } from '../../components/ui/Card';
-import { Button } from '../../components/ui/Button';
-import { useAuth } from '../../contexts/AuthContext';
+import { Theme } from '../../../constants/Theme';
+import { Card } from '../../../components/ui/Card';
+import { Button } from '../../../components/ui/Button';
+import { useAuth } from '../../../contexts/AuthContext';
+import { LeafGuardApi } from '../../../services/LeafGuardApi';
 
 export default function ProfileScreen() {
   const router = useRouter();

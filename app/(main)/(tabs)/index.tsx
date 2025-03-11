@@ -7,16 +7,20 @@ import {
   RefreshControl,
   Image,
   TouchableOpacity,
+  Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useColorScheme } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
+import { router } from 'expo-router';
+import * as Location from 'expo-location';
 
-import { Theme } from '../../constants/Theme';
-import { Card, TouchableCard } from '../../components/ui/Card';
-import { useAuth } from '../../contexts/AuthContext';
-import { LeafGuardApi } from '../../services/LeafGuardApi';
+import { Theme } from '../../../constants/Theme';
+import { Card, TouchableCard } from '../../../components/ui/Card';
+import { Button } from '../../../components/ui/Button';
+import { useAuth } from '../../../contexts/AuthContext';
+import { LeafGuardApi } from '../../../services/LeafGuardApi';
+import { weatherService } from '../../../services/WeatherService';
 
 interface RecentScan {
   id: string;
@@ -27,8 +31,14 @@ interface RecentScan {
   imageUri: string;
 }
 
+interface WeatherDisplayData {
+  temperature: string;
+  humidity: string;
+  condition: string;
+  icon: string;
+}
+
 export default function HomeScreen() {
-  const router = useRouter();
   const { user } = useAuth();
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
@@ -36,15 +46,18 @@ export default function HomeScreen() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [apiStatus, setApiStatus] = useState<'online' | 'offline' | 'checking'>('checking');
   const [recentScans, setRecentScans] = useState<RecentScan[]>([]);
-  const [weatherData, setWeatherData] = useState({
-    temperature: '24°C',
-    humidity: '65%',
-    condition: 'Partly Cloudy',
+  const [weatherData, setWeatherData] = useState<WeatherDisplayData>({
+    temperature: '--°C',
+    humidity: '--%',
+    condition: 'Loading...',
+    icon: '',
   });
+  const [locationError, setLocationError] = useState<string | null>(null);
 
   useEffect(() => {
     checkApiStatus();
     loadMockData();
+    fetchWeatherData();
   }, []);
 
   const checkApiStatus = async () => {
@@ -82,11 +95,49 @@ export default function HomeScreen() {
     setRecentScans(mockScans);
   };
 
+  const fetchWeatherData = async () => {
+    try {
+      setLocationError(null);
+      
+      // Request location permissions
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') {
+        setLocationError('Location permission not granted');
+        return;
+      }
+
+      // Get current location
+      const location = await Location.getCurrentPositionAsync({
+        accuracy: Platform.select({
+          android: Location.Accuracy.Balanced,
+          ios: Location.Accuracy.Lowest,
+        }),
+      });
+      
+      // Fetch weather data
+      const weather = await weatherService.getWeatherByCoordinates(
+        location.coords.latitude,
+        location.coords.longitude
+      );
+      
+      setWeatherData({
+        temperature: `${Math.round(weather.temperature)}°C`,
+        humidity: `${weather.humidity}%`,
+        condition: weather.description,
+        icon: `https://openweathermap.org/img/wn/${weather.icon}@2x.png`,
+      });
+    } catch (error) {
+      console.error('Error fetching weather:', error);
+      setLocationError('Failed to fetch weather data');
+    }
+  };
+
   const onRefresh = async () => {
     setIsRefreshing(true);
     await Promise.all([
       checkApiStatus(),
-      loadMockData()
+      loadMockData(),
+      fetchWeatherData()
     ]);
     setIsRefreshing(false);
   };
@@ -100,7 +151,7 @@ export default function HomeScreen() {
   };
 
   const navigateToDetection = () => {
-    router.push('/(tabs)/disease-detection');
+    router.push('/(main)/(tabs)/disease-detection');
   };
 
   return (
@@ -140,27 +191,27 @@ export default function HomeScreen() {
               style={styles.quickActionCard}
               onPress={navigateToDetection}
             >
-              <Ionicons name="leaf" size={32} color={Theme.colors.primary} />
+              <Ionicons name="scan" size={32} color={Theme.colors.primary} />
               <Text style={[styles.quickActionTitle, { color: '#2C3D32' }]}>
                 Detect Disease
               </Text>
             </TouchableCard>
             <TouchableCard
               style={styles.quickActionCard}
-              onPress={() => {}}
+              onPress={() => router.push('/environmental-data')}
             >
-              <Ionicons name="book" size={32} color={Theme.colors.primary} />
+              <Ionicons name="leaf" size={32} color={Theme.colors.primary} />
               <Text style={[styles.quickActionTitle, { color: '#2C3D32' }]}>
-                Disease Library
+                Environmental Data
               </Text>
             </TouchableCard>
             <TouchableCard
               style={styles.quickActionCard}
-              onPress={() => {}}
+              onPress={() => router.push('/disease-trends')}
             >
-              <Ionicons name="map" size={32} color={Theme.colors.primary} />
+              <Ionicons name="trending-up" size={32} color={Theme.colors.primary} />
               <Text style={[styles.quickActionTitle, { color: '#2C3D32' }]}>
-                Disease Map
+                Disease Trends
               </Text>
             </TouchableCard>
           </View>
@@ -172,28 +223,49 @@ export default function HomeScreen() {
             <Text style={[styles.weatherTitle, { color: '#2C3D32' }]}>
               Current Weather
             </Text>
-            <Ionicons name="partly-sunny" size={24} color={Theme.colors.primary} />
+            {locationError ? (
+              <TouchableOpacity onPress={fetchWeatherData}>
+                <Ionicons name="refresh" size={24} color={Theme.colors.primary} />
+              </TouchableOpacity>
+            ) : weatherData.icon ? (
+              <Image 
+                source={{ uri: weatherData.icon }} 
+                style={styles.weatherIcon} 
+              />
+            ) : (
+              <Ionicons 
+                name="partly-sunny" 
+                size={24} 
+                color={Theme.colors.primary} 
+              />
+            )}
           </View>
-          <View style={styles.weatherContent}>
-            <View style={styles.weatherItem}>
-              <Ionicons name="thermometer-outline" size={20} color={'#445C4B'} />
-              <Text style={[styles.weatherText, { color: '#2C3D32' }]}>
-                {weatherData.temperature}
-              </Text>
+          {locationError ? (
+            <Text style={[styles.errorText, { color: Theme.colors.error }]}>
+              {locationError}
+            </Text>
+          ) : (
+            <View style={styles.weatherContent}>
+              <View style={styles.weatherItem}>
+                <Ionicons name="thermometer-outline" size={20} color={'#445C4B'} />
+                <Text style={[styles.weatherText, { color: '#2C3D32' }]}>
+                  {weatherData.temperature}
+                </Text>
+              </View>
+              <View style={styles.weatherItem}>
+                <Ionicons name="water-outline" size={20} color={'#445C4B'} />
+                <Text style={[styles.weatherText, { color: '#2C3D32' }]}>
+                  {weatherData.humidity}
+                </Text>
+              </View>
+              <View style={styles.weatherItem}>
+                <Ionicons name="cloud-outline" size={20} color={'#445C4B'} />
+                <Text style={[styles.weatherText, { color: '#2C3D32' }]}>
+                  {weatherData.condition}
+                </Text>
+              </View>
             </View>
-            <View style={styles.weatherItem}>
-              <Ionicons name="water-outline" size={20} color={'#445C4B'} />
-              <Text style={[styles.weatherText, { color: '#2C3D32' }]}>
-                {weatherData.humidity}
-              </Text>
-            </View>
-            <View style={styles.weatherItem}>
-              <Ionicons name="cloud-outline" size={20} color={'#445C4B'} />
-              <Text style={[styles.weatherText, { color: '#2C3D32' }]}>
-                {weatherData.condition}
-              </Text>
-            </View>
-          </View>
+          )}
         </Card>
 
         {/* Subscription Status */}
@@ -451,5 +523,14 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: Theme.typography.fontSize.md,
     fontWeight: '600',
+  },
+  errorText: {
+    fontSize: Theme.typography.fontSize.sm,
+    textAlign: 'center',
+    marginTop: Theme.spacing.sm,
+  },
+  weatherIcon: {
+    width: 24,
+    height: 24,
   },
 });

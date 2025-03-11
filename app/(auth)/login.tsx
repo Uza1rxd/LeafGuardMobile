@@ -85,7 +85,7 @@ export default function LoginScreen() {
       setErrors({});
 
       await login(email, password);
-      router.replace('/(tabs)');
+      router.replace('/');
     } catch (error) {
       if (error instanceof Error) {
         // Handle specific error cases

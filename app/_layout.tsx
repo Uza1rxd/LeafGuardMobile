@@ -4,21 +4,26 @@ import { useEffect } from 'react';
 import { useFonts } from 'expo-font';
 import { SplashScreen } from 'expo-router';
 import { AuthProvider } from '../contexts/AuthContext';
-import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { Theme } from '../constants/Theme';
 import { LeafGuardApi } from '../services/LeafGuardApi';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
 // Prevent the splash screen from auto-hiding before asset loading is complete.
 SplashScreen.preventAutoHideAsync();
 
 export default function RootLayout() {
+  const colorScheme = useColorScheme();
+  const isDark = colorScheme === 'dark';
+
   const [loaded, error] = useFonts({
-    // Add your custom fonts here
+    // Add your custom fonts here if needed
   });
 
-  // Expo Router uses Error Boundaries to catch errors in the navigation tree.
+  // Handle font loading errors
   useEffect(() => {
-    if (error) throw error;
+    if (error) {
+      console.error('Error loading fonts:', error);
+    }
   }, [error]);
 
   useEffect(() => {
@@ -36,29 +41,14 @@ export default function RootLayout() {
     return null;
   }
 
-  return <RootLayoutNav />;
-}
-
-function RootLayoutNav() {
-  const colorScheme = useColorScheme();
-  const isDark = colorScheme === 'dark';
-
   return (
-    <SafeAreaProvider>
+    <GestureHandlerRootView style={{ flex: 1 }}>
       <AuthProvider>
-        <Stack
-          screenOptions={{
-            headerShown: false,
-            contentStyle: {
-              backgroundColor: Theme.colors.background.light,
-            },
-            animation: 'slide_from_right',
-          }}
-        >
-          <Stack.Screen name="(auth)" options={{ headerShown: false }} />
-          <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+        <Stack screenOptions={{ headerShown: false }}>
+          <Stack.Screen name="(auth)" />
+          <Stack.Screen name="(main)" />
         </Stack>
       </AuthProvider>
-    </SafeAreaProvider>
+    </GestureHandlerRootView>
   );
 }

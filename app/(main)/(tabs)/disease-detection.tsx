@@ -17,11 +17,11 @@ import * as ImagePicker from 'expo-image-picker';
 import { StatusBar } from 'expo-status-bar';
 import { useRouter } from 'expo-router';
 
-import { Theme } from '../../constants/Theme';
-import { Card } from '../../components/ui/Card';
-import { Button } from '../../components/ui/Button';
-import { useAuth } from '../../contexts/AuthContext';
-import { LeafGuardApi } from '../../services/LeafGuardApi';
+import { Theme } from '../../../constants/Theme';
+import { Card } from '../../../components/ui/Card';
+import { Button } from '../../../components/ui/Button';
+import { useAuth } from '../../../contexts/AuthContext';
+import { LeafGuardApi } from '../../../services/LeafGuardApi';
 
 interface DetectionResult {
   disease: string;

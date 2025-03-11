@@ -1,30 +1,21 @@
 import { Tabs } from 'expo-router';
-import { useColorScheme, TouchableOpacity } from 'react-native';
+import { useColorScheme } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { DrawerToggleButton } from '@react-navigation/drawer';
-import { Theme } from '../../constants/Theme';
-import { useAuth } from '../../contexts/AuthContext';
-import { Redirect } from 'expo-router';
+import { Theme } from '../../../constants/Theme';
+
+interface TabIconProps {
+  color: string;
+  size: number;
+}
 
 export default function TabLayout() {
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
-  const { isAuthenticated, isLoading } = useAuth();
-
-  // If the user is not authenticated, redirect to the auth screen
-  if (!isLoading && !isAuthenticated) {
-    return <Redirect href="/" />;
-  }
 
   return (
     <Tabs
       screenOptions={{
-        headerShown: true,
-        headerLeft: () => <DrawerToggleButton />,
-        headerStyle: {
-          backgroundColor: isDark ? Theme.colors.background.dark : Theme.colors.background.light,
-        },
-        headerTintColor: isDark ? Theme.colors.text.primary.dark : Theme.colors.text.primary.light,
+        headerShown: false,
         tabBarActiveTintColor: Theme.colors.primary,
         tabBarInactiveTintColor: isDark ? Theme.colors.text.secondary.dark : Theme.colors.text.secondary.light,
         tabBarStyle: {
@@ -41,8 +32,7 @@ export default function TabLayout() {
         name="index"
         options={{
           title: 'Home',
-          headerTitle: 'LeafGuard',
-          tabBarIcon: ({ color, size }) => (
+          tabBarIcon: ({ color, size }: TabIconProps) => (
             <Ionicons name="home-outline" size={size} color={color} />
           ),
         }}
@@ -51,8 +41,7 @@ export default function TabLayout() {
         name="disease-detection"
         options={{
           title: 'Scan',
-          headerTitle: 'Plant Scanner',
-          tabBarIcon: ({ color, size }) => (
+          tabBarIcon: ({ color, size }: TabIconProps) => (
             <Ionicons name="scan-outline" size={size} color={color} />
           ),
         }}
@@ -61,12 +50,11 @@ export default function TabLayout() {
         name="profile"
         options={{
           title: 'Profile',
-          headerTitle: 'My Profile',
-          tabBarIcon: ({ color, size }) => (
+          tabBarIcon: ({ color, size }: TabIconProps) => (
             <Ionicons name="person-outline" size={size} color={color} />
           ),
         }}
       />
     </Tabs>
   );
-}
+} 
