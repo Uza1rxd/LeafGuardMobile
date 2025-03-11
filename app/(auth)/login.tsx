@@ -1,73 +1,116 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
-  TextInput,
-  TouchableOpacity,
   StyleSheet,
-  Alert,
-  ActivityIndicator,
+  TouchableOpacity,
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useAuth } from '../../contexts/AuthContext';
+import { useColorScheme } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import { StatusBar } from 'expo-status-bar';
+import NetInfo from '@react-native-community/netinfo';
+
 import { Theme } from '../../constants/Theme';
+import { Button } from '../../components/ui/Button';
+import { Input } from '../../components/ui/Input';
+import { Card } from '../../components/ui/Card';
+import { useAuth } from '../../contexts/AuthContext';
+import { DEFAULT_USER } from '../../constants/DefaultUser';
+
+interface FormErrors {
+  email?: string;
+  password?: string;
+  general?: string;
+}
 
 export default function LoginScreen() {
   const router = useRouter();
   const { login } = useAuth();
+  const colorScheme = useColorScheme();
+  const isDark = colorScheme === 'dark';
+
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [isOffline, setIsOffline] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const [errors, setErrors] = useState<FormErrors>({});
 
-  const validateEmail = (email: string) => {
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    return emailRegex.test(email);
+  useEffect(() => {
+    checkNetworkStatus();
+    // Set up network state listener
+    const unsubscribe = NetInfo.addEventListener(state => {
+      setIsOffline(!state.isConnected);
+    });
+
+    return () => {
+      unsubscribe();
+    };
+  }, []);
+
+  const checkNetworkStatus = async () => {
+    const netInfo = await NetInfo.fetch();
+    setIsOffline(!netInfo.isConnected);
+  };
+
+  const validateForm = (): boolean => {
+    const newErrors: FormErrors = {};
+
+    if (!email) {
+      newErrors.email = 'Email is required';
+    } else if (!/\S+@\S+\.\S+/.test(email)) {
+      newErrors.email = 'Please enter a valid email';
+    }
+
+    if (!password) {
+      newErrors.password = 'Password is required';
+    } else if (password.length < 6) {
+      newErrors.password = 'Password must be at least 6 characters';
+    }
+
+    setErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
   };
 
   const handleLogin = async () => {
-    // Input validation
-    if (!email || !password) {
-      Alert.alert('Error', 'Please fill in all fields');
-      return;
-    }
-
-    if (!validateEmail(email)) {
-      Alert.alert('Error', 'Please enter a valid email address');
-      return;
-    }
-
-    if (password.length < 6) {
-      Alert.alert('Error', 'Password must be at least 6 characters long');
-      return;
-    }
-
-    setIsLoading(true);
     try {
+      if (!validateForm()) return;
+
+      setIsLoading(true);
+      setErrors({});
+
       await login(email, password);
-      console.log('Login successful');
-      router.replace('/');
+      router.replace('/(tabs)');
     } catch (error) {
-      let errorMessage = 'Please check your credentials and try again';
-      
       if (error instanceof Error) {
-        if (error.message.includes('401') || error.message.includes('unauthorized')) {
-          errorMessage = 'Invalid email or password. Please try again.';
-        } else if (error.message.includes('404')) {
-          errorMessage = 'Account not found. Please check your email or sign up.';
-        } else if (error.message.includes('locked')) {
-          errorMessage = 'Account locked. Please try again later or reset your password.';
-        } else if (error.message.includes('network')) {
-          errorMessage = 'Network error. Please check your internet connection and try again.';
+        // Handle specific error cases
+        if (error.message === 'Incorrect password') {
+          setErrors({ password: 'Incorrect password' });
+          setPassword(''); // Clear password field for security
+        } else if (error.message === 'Email not found') {
+          setErrors({ email: 'Email not found' });
+        } else if (error.message.includes('Network error')) {
+          setErrors({ general: 'Network error - Please check your connection' });
         } else {
-          errorMessage = error.message;
+          setErrors({ general: error.message });
         }
+      } else {
+        setErrors({ general: 'An unexpected error occurred' });
       }
-      
-      Alert.alert('Login Failed', errorMessage);
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const useDefaultCredentials = () => {
+    setEmail(DEFAULT_USER.email);
+    setPassword('password');
+    setErrors({});
   };
 
   const navigateToRegister = () => {
@@ -79,63 +122,113 @@ export default function LoginScreen() {
   };
 
   return (
-    <SafeAreaView style={styles.container}>
-      <View style={styles.content}>
-        <Text style={styles.title}>Welcome Back</Text>
-        <Text style={styles.subtitle}>Sign in to continue</Text>
+    <SafeAreaView style={[styles.container, { backgroundColor: isDark ? Theme.colors.background.dark : Theme.colors.background.light }]}>
+      <StatusBar style={isDark ? 'light' : 'dark'} />
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        style={styles.keyboardAvoidingView}
+      >
+        <ScrollView
+          contentContainerStyle={styles.scrollView}
+          keyboardShouldPersistTaps="handled"
+        >
+          <View style={styles.content}>
+            <Text style={[styles.title, { color: isDark ? Theme.colors.text.primary.dark : Theme.colors.text.primary.light }]}>
+              Welcome Back
+            </Text>
+            <Text style={[styles.subtitle, { color: isDark ? Theme.colors.text.secondary.dark : Theme.colors.text.secondary.light }]}>
+              Sign in to continue
+            </Text>
 
-        <View style={styles.form}>
-          <View style={styles.inputContainer}>
-            <Text style={styles.label}>Email</Text>
-            <TextInput
-              style={styles.input}
-              value={email}
-              onChangeText={setEmail}
-              placeholder="Enter your email"
-              keyboardType="email-address"
-              autoCapitalize="none"
-              autoComplete="email"
-            />
-          </View>
-
-          <View style={styles.inputContainer}>
-            <Text style={styles.label}>Password</Text>
-            <TextInput
-              style={styles.input}
-              value={password}
-              onChangeText={setPassword}
-              placeholder="Enter your password"
-              secureTextEntry
-            />
-          </View>
-
-          <TouchableOpacity
-            style={styles.forgotPassword}
-            onPress={navigateToForgotPassword}
-          >
-            <Text style={styles.forgotPasswordText}>Forgot Password?</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[styles.button, isLoading && styles.buttonDisabled]}
-            onPress={handleLogin}
-            disabled={isLoading}
-          >
-            {isLoading ? (
-              <ActivityIndicator color="#fff" />
-            ) : (
-              <Text style={styles.buttonText}>Sign In</Text>
+            {isOffline && (
+              <Card style={styles.offlineCard}>
+                <Text style={[styles.offlineText, { color: Theme.colors.warning }]}>
+                  You're offline. Use default credentials:
+                </Text>
+                <TouchableOpacity onPress={useDefaultCredentials}>
+                  <Text style={[styles.defaultCredentials, { color: Theme.colors.warning }]}>
+                    Tap to use: user@leafguard.com / password
+                  </Text>
+                </TouchableOpacity>
+              </Card>
             )}
-          </TouchableOpacity>
 
-          <View style={styles.registerContainer}>
-            <Text style={styles.registerText}>Don't have an account? </Text>
-            <TouchableOpacity onPress={navigateToRegister}>
-              <Text style={styles.registerLink}>Sign Up</Text>
-            </TouchableOpacity>
+            {errors.general && (
+              <Card style={styles.errorCard}>
+                <Text style={[styles.errorText, { color: Theme.colors.error }]}>
+                  {errors.general}
+                </Text>
+              </Card>
+            )}
+
+            <View style={styles.form}>
+              <Input
+                label="Email"
+                value={email}
+                onChangeText={(text) => {
+                  setEmail(text);
+                  setErrors((prev) => ({ ...prev, email: undefined, general: undefined }));
+                }}
+                placeholder="Enter your email"
+                keyboardType="email-address"
+                autoCapitalize="none"
+                autoComplete="email"
+                error={errors.email}
+                leftIcon={<Ionicons name="mail-outline" size={20} color={Theme.colors.primary} />}
+              />
+
+              <Input
+                label="Password"
+                value={password}
+                onChangeText={(text) => {
+                  setPassword(text);
+                  setErrors((prev) => ({ ...prev, password: undefined, general: undefined }));
+                }}
+                placeholder="Enter your password"
+                secureTextEntry={!showPassword}
+                error={errors.password}
+                leftIcon={<Ionicons name="lock-closed-outline" size={20} color={Theme.colors.primary} />}
+                rightIcon={
+                  <TouchableOpacity onPress={() => setShowPassword(!showPassword)}>
+                    <Ionicons
+                      name={showPassword ? 'eye-off-outline' : 'eye-outline'}
+                      size={20}
+                      color={Theme.colors.primary}
+                    />
+                  </TouchableOpacity>
+                }
+              />
+
+              <TouchableOpacity
+                style={styles.forgotPassword}
+                onPress={navigateToForgotPassword}
+              >
+                <Text style={[styles.forgotPasswordText, { color: Theme.colors.primary }]}>
+                  Forgot Password?
+                </Text>
+              </TouchableOpacity>
+
+              <Button
+                title="Sign In"
+                onPress={handleLogin}
+                isLoading={isLoading}
+                style={styles.loginButton}
+              />
+
+              <View style={styles.registerContainer}>
+                <Text style={[styles.registerText, { color: isDark ? Theme.colors.text.secondary.dark : Theme.colors.text.secondary.light }]}>
+                  Don't have an account?
+                </Text>
+                <TouchableOpacity onPress={navigateToRegister}>
+                  <Text style={[styles.registerLink, { color: Theme.colors.primary }]}>
+                    {' Sign Up'}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </View>
           </View>
-        </View>
-      </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
@@ -143,7 +236,12 @@ export default function LoginScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#fff',
+  },
+  keyboardAvoidingView: {
+    flex: 1,
+  },
+  scrollView: {
+    flexGrow: 1,
   },
   content: {
     flex: 1,
@@ -153,56 +251,24 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 32,
     fontWeight: 'bold',
-    color: Theme.colors.primary,
     marginBottom: 8,
   },
   subtitle: {
     fontSize: 16,
-    color: '#666',
     marginBottom: 32,
   },
   form: {
     gap: 16,
   },
-  inputContainer: {
-    gap: 8,
-  },
-  label: {
-    fontSize: 14,
-    fontWeight: '500',
-    color: '#333',
-  },
-  input: {
-    height: 48,
-    borderWidth: 1,
-    borderColor: '#ddd',
-    borderRadius: 8,
-    paddingHorizontal: 16,
-    fontSize: 16,
-    backgroundColor: '#f8f8f8',
-  },
   forgotPassword: {
     alignSelf: 'flex-end',
+    marginTop: -8,
   },
   forgotPasswordText: {
-    color: Theme.colors.primary,
     fontSize: 14,
   },
-  button: {
-    height: 48,
-    backgroundColor: Theme.colors.primary,
-    borderRadius: 8,
-    justifyContent: 'center',
-    alignItems: 'center',
+  loginButton: {
     marginTop: 16,
-  },
-  buttonDisabled: {
-    opacity: 0.7,
-  },
-  buttonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
   },
   registerContainer: {
     flexDirection: 'row',
@@ -210,12 +276,34 @@ const styles = StyleSheet.create({
     marginTop: 16,
   },
   registerText: {
-    color: '#666',
     fontSize: 14,
   },
   registerLink: {
-    color: Theme.colors.primary,
     fontSize: 14,
     fontWeight: '600',
+  },
+  offlineCard: {
+    marginBottom: Theme.spacing.lg,
+    padding: Theme.spacing.md,
+    backgroundColor: Theme.colors.statusBackground.warning,
+  },
+  offlineText: {
+    fontSize: 14,
+    fontWeight: '600',
+    marginTop: 8,
+    textAlign: 'center',
+  },
+  defaultCredentials: {
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  errorCard: {
+    marginBottom: Theme.spacing.lg,
+    padding: Theme.spacing.md,
+    backgroundColor: Theme.colors.statusBackground.error,
+  },
+  errorText: {
+    fontSize: 14,
+    textAlign: 'center',
   },
 }); 

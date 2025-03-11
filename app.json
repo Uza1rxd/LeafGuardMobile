@@ -17,14 +17,19 @@
     ],
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.leafguard.app"
+      "bundleIdentifier": "com.leafguard.app",
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "LeafGuard needs access to location to provide accurate environmental data for your plants.",
+        "NSLocationAlwaysUsageDescription": "LeafGuard needs access to location to provide accurate environmental data for your plants."
+      }
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
         "backgroundColor": "#F8FAF8"
       },
-      "package": "com.leafguard.app"
+      "package": "com.leafguard.app",
+      "permissions": ["ACCESS_COARSE_LOCATION", "ACCESS_FINE_LOCATION"]
     },
     "web": {
       "bundler": "metro",
@@ -32,7 +37,13 @@
       "favicon": "./assets/images/favicon.png"
     },
     "plugins": [
-      "expo-router"
+      "expo-router",
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "LeafGuard needs access to location to provide accurate environmental data for your plants."
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,

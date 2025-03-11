@@ -43,8 +43,6 @@ export default function HomeScreen() {
   });
 
   useEffect(() => {
-    // Update the API URL to the latest one
-    LeafGuardApi.updateBaseUrl('https://5c2f-206-84-168-78.ngrok-free.app/api/predict/');
     checkApiStatus();
     loadMockData();
   }, []);

@@ -6,6 +6,7 @@ import { SplashScreen } from 'expo-router';
 import { AuthProvider } from '../contexts/AuthContext';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { Theme } from '../constants/Theme';
+import { LeafGuardApi } from '../services/LeafGuardApi';
 
 // Prevent the splash screen from auto-hiding before asset loading is complete.
 SplashScreen.preventAutoHideAsync();
@@ -25,6 +26,11 @@ export default function RootLayout() {
       SplashScreen.hideAsync();
     }
   }, [loaded]);
+
+  useEffect(() => {
+    // Reset API URL to default configuration
+    LeafGuardApi.resetBaseUrl();
+  }, []);
 
   if (!loaded) {
     return null;

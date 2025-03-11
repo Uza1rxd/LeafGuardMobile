@@ -10,18 +10,19 @@ import {
   ActivityIndicator,
   Alert,
   useColorScheme,
+  Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import * as Location from 'expo-location';
 import { StatusBar } from 'expo-status-bar';
+import * as Location from 'expo-location';
 
 import { Theme } from '../../constants/Theme';
 import { Card } from '../../components/ui/Card';
 import { Button } from '../../components/ui/Button';
 import { weatherService, WeatherData } from '../../services/WeatherService';
 
-export default function EnvironmentalDataScreen() {
+function EnvironmentalDataScreen() {
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
 
@@ -29,28 +30,46 @@ export default function EnvironmentalDataScreen() {
   const [weatherData, setWeatherData] = useState<WeatherData | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [useCurrentLocation, setUseCurrentLocation] = useState(false);
+  const [locationError, setLocationError] = useState<string | null>(null);
 
   useEffect(() => {
-    checkLocationPermission();
+    (async () => {
+      try {
+        setLocationError(null);
+        const { status } = await Location.requestForegroundPermissionsAsync();
+        if (status !== 'granted') {
+          setLocationError('Permission to access location was denied');
+          return;
+        }
+        await getCurrentLocation();
+      } catch (error) {
+        console.error('Location permission error:', error);
+        setLocationError('Failed to get location permission');
+      }
+    })();
   }, []);
-
-  const checkLocationPermission = async () => {
-    const { status } = await Location.requestForegroundPermissionsAsync();
-    if (status === 'granted') {
-      getCurrentLocation();
-    }
-  };
 
   const getCurrentLocation = async () => {
     try {
       setIsLoading(true);
-      const location = await Location.getCurrentPositionAsync({});
+      setLocationError(null);
+      
+      const location = await Location.getCurrentPositionAsync({
+        accuracy: Platform.select({
+          android: Location.Accuracy.Balanced,
+          ios: Location.Accuracy.Lowest,
+        }),
+      });
+      
       const { latitude, longitude } = location.coords;
       const weather = await weatherService.getWeatherByCoordinates(latitude, longitude);
       setWeatherData(weather);
       setUseCurrentLocation(true);
     } catch (error) {
-      Alert.alert('Error', 'Failed to get current location. Please enter a city manually.');
+      console.error('Location error:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Failed to get current location';
+      setLocationError(errorMessage);
+      Alert.alert('Location Error', 'Failed to get current location. Please enter a city manually.');
       setUseCurrentLocation(false);
     } finally {
       setIsLoading(false);
@@ -110,12 +129,19 @@ export default function EnvironmentalDataScreen() {
           </View>
           
           <Button
-            title="Use Current Location"
+            title={isLoading ? "Getting Location..." : "Use Current Location"}
             variant="outline"
             leftIcon={<Ionicons name="location" size={20} color={Theme.colors.primary} />}
             onPress={getCurrentLocation}
             style={styles.locationButton}
+            disabled={isLoading}
           />
+          
+          {locationError && (
+            <Text style={[styles.errorText, { color: Theme.colors.error }]}>
+              {locationError}
+            </Text>
+          )}
         </Card>
 
         {isLoading ? (
@@ -235,6 +261,8 @@ export default function EnvironmentalDataScreen() {
     </SafeAreaView>
   );
 }
+
+export default EnvironmentalDataScreen;
 
 const styles = StyleSheet.create({
   container: {
@@ -365,5 +393,10 @@ const styles = StyleSheet.create({
     fontSize: 16,
     marginLeft: 12,
     lineHeight: 22,
+  },
+  errorText: {
+    marginTop: 8,
+    fontSize: 14,
+    textAlign: 'center',
   },
 }); 

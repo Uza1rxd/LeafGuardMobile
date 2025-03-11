@@ -15,7 +15,7 @@ dotenv.config();
 connectDB();
 
 const app: Express = express();
-const PORT = process.env.PORT || 5000;
+const PORT = Number(process.env.PORT) || 5000;
 
 // Middleware
 app.use(cors());
@@ -42,6 +42,7 @@ app.get('/', (req: Request, res: Response) => {
 });
 
 // Start server
-app.listen(PORT, () => {
+app.listen(PORT, '0.0.0.0', () => {
   console.log(`Server running in ${process.env.NODE_ENV} mode on port ${PORT}`);
+  console.log(`Server accessible at http://localhost:${PORT} and http://192.168.18.50:${PORT}`);
 }); 

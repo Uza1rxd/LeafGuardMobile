@@ -59,7 +59,7 @@ export default function DiseaseDetectionScreen() {
   // Initialize the API URL when the component mounts
   useEffect(() => {
     // Update the API URL to the latest one
-    LeafGuardApi.updateBaseUrl('https://5c2f-206-84-168-78.ngrok-free.app/api');
+    // LeafGuardApi.updateBaseUrl('https://5c2f-206-84-168-78.ngrok-free.app/api');
     checkApiStatus();
     loadRecentScans();
   }, []);
