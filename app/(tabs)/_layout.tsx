@@ -17,33 +17,15 @@ export default function TabLayout() {
   return (
     <Tabs
       screenOptions={{
+        headerShown: false,
         tabBarActiveTintColor: Theme.colors.primary,
-        tabBarInactiveTintColor: Theme.colors.text.disabled.light,
+        tabBarInactiveTintColor: '#666',
         tabBarStyle: {
-          backgroundColor: Theme.colors.surface.light,
-          borderTopColor: Theme.colors.border.light,
           borderTopWidth: 1,
-          height: Theme.layout.bottomTabHeight,
-          paddingBottom: Theme.spacing.xs,
-          paddingTop: Theme.spacing.xs,
-          ...Theme.shadows.light.md,
-        },
-        headerStyle: {
-          backgroundColor: Theme.colors.surface.light,
-          height: Theme.layout.headerHeight,
-          ...Theme.shadows.light.sm,
-        },
-        headerTitleStyle: {
-          fontSize: Theme.typography.fontSize.lg,
-          fontWeight: '600',
-          color: Theme.colors.text.primary.light,
-        },
-        headerTintColor: Theme.colors.text.primary.light,
-        headerShadowVisible: false,
-        tabBarLabelStyle: {
-          fontSize: Theme.typography.fontSize.xs,
-          fontWeight: '500',
-          marginTop: Theme.spacing.xxs,
+          borderTopColor: '#eee',
+          height: 60,
+          paddingBottom: 10,
+          paddingTop: 10,
         },
       }}
     >
@@ -59,45 +41,9 @@ export default function TabLayout() {
       <Tabs.Screen
         name="disease-detection"
         options={{
-          title: 'Detect',
+          title: 'Scan',
           tabBarIcon: ({ color, size }) => (
-            <Ionicons name="leaf-outline" size={size} color={color} />
-          ),
-        }}
-      />
-      <Tabs.Screen
-        name="environmental-data"
-        options={{
-          title: 'Environment',
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="cloud-outline" size={size} color={color} />
-          ),
-        }}
-      />
-      <Tabs.Screen
-        name="disease-trends"
-        options={{
-          title: 'Trends',
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="analytics-outline" size={size} color={color} />
-          ),
-        }}
-      />
-      <Tabs.Screen
-        name="treatment-management"
-        options={{
-          title: 'Treatments',
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="medkit-outline" size={size} color={color} />
-          ),
-        }}
-      />
-      <Tabs.Screen
-        name="subscription"
-        options={{
-          title: 'Subscription',
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="card-outline" size={size} color={color} />
+            <Ionicons name="scan-outline" size={size} color={color} />
           ),
         }}
       />

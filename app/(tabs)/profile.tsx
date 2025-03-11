@@ -27,12 +27,9 @@ export default function ProfileScreen() {
   const handleLogout = async () => {
     try {
       await logout();
-      router.replace('/');
+      router.replace('/(auth)/login');
     } catch (error) {
-      Alert.alert(
-        'Logout Failed',
-        error instanceof Error ? error.message : 'An unknown error occurred'
-      );
+      console.error('Logout error:', error);
     }
   };
 

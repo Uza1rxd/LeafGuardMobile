@@ -8,6 +8,7 @@ import {
   ScrollView,
   ActivityIndicator,
   Alert,
+  RefreshControl,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useColorScheme } from 'react-native';
@@ -25,9 +26,20 @@ import { LeafGuardApi } from '../../services/LeafGuardApi';
 interface DetectionResult {
   disease: string;
   confidence: number;
-  imageUri: string;  // Local image URI
-  resultImageUri?: string;  // Result image from API if available
-  timestamp: Date;
+  description: string;
+  symptoms: string[];
+  recommendations: string[];
+  preventions: string[];
+  imageUrl: string;
+  remainingScans: number;
+  error?: string;
+}
+
+interface SavedScan extends DetectionResult {
+  _id: string;
+  userId: string;
+  createdAt: string;
+  plantName: string;
 }
 
 export default function DiseaseDetectionScreen() {
@@ -39,14 +51,17 @@ export default function DiseaseDetectionScreen() {
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [result, setResult] = useState<DetectionResult | null>(null);
+  const [recentScans, setRecentScans] = useState<SavedScan[]>([]);
   const [apiUrl, setApiUrl] = useState(LeafGuardApi.getBaseUrl());
   const [apiStatus, setApiStatus] = useState<'online' | 'offline' | 'checking'>('checking');
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
   // Initialize the API URL when the component mounts
   useEffect(() => {
     // Update the API URL to the latest one
     LeafGuardApi.updateBaseUrl('https://5c2f-206-84-168-78.ngrok-free.app/api');
     checkApiStatus();
+    loadRecentScans();
   }, []);
 
   const checkApiStatus = async () => {
@@ -57,6 +72,21 @@ export default function DiseaseDetectionScreen() {
       setApiStatus('offline');
       console.error('API status check failed:', error);
     }
+  };
+
+  const loadRecentScans = async () => {
+    try {
+      const scans = await LeafGuardApi.getRecentScans();
+      setRecentScans(scans);
+    } catch (error) {
+      console.error('Failed to load recent scans:', error);
+    }
+  };
+
+  const onRefresh = async () => {
+    setIsRefreshing(true);
+    await loadRecentScans();
+    setIsRefreshing(false);
   };
 
   const pickImage = async () => {
@@ -75,13 +105,14 @@ export default function DiseaseDetectionScreen() {
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
       allowsEditing: true,
-      aspect: [1, 1],
-      quality: 0.8,
+      aspect: [4, 3],
+      quality: 1,
     });
 
     if (!result.canceled && result.assets && result.assets.length > 0) {
       setSelectedImage(result.assets[0].uri);
       setResult(null); // Clear previous results
+      detectDisease(result.assets[0].uri);
     }
   };
 
@@ -100,68 +131,45 @@ export default function DiseaseDetectionScreen() {
     // Launch the camera
     const result = await ImagePicker.launchCameraAsync({
       allowsEditing: true,
-      aspect: [1, 1],
-      quality: 0.8,
+      aspect: [4, 3],
+      quality: 1,
     });
 
     if (!result.canceled && result.assets && result.assets.length > 0) {
       setSelectedImage(result.assets[0].uri);
       setResult(null); // Clear previous results
+      detectDisease(result.assets[0].uri);
     }
   };
 
-  const detectDisease = async () => {
-    if (!selectedImage) {
-      Alert.alert('No Image Selected', 'Please select or take a photo first.');
-      return;
-    }
-
-    if (user && !user.isSubscribed && user.remainingFreeScans <= 0) {
-      Alert.alert(
-        'No Scans Remaining',
-        'You have used all your free scans. Please upgrade to continue using this feature.',
-        [
-          { text: 'Cancel', style: 'cancel' },
-          { text: 'Upgrade', onPress: () => router.push('/subscription') },
-        ]
-      );
-      return;
-    }
-
+  const detectDisease = async (imageUri: string) => {
     setIsLoading(true);
+    setResult(null);
     try {
-      const response = await LeafGuardApi.predictDisease(selectedImage);
-      
-      if (response.error) {
-        throw new Error(response.error);
-      }
+      const detection = await LeafGuardApi.predictDisease(imageUri);
+      setResult(detection);
+      updateRemainingScans(detection.remainingScans);
 
-      if (response.data) {
-        setResult({
-          disease: response.data.disease,
-          confidence: response.data.confidence,
-          imageUri: selectedImage,
-          timestamp: new Date(),
+      // Save the scan to the database
+      if (!detection.error) {
+        await LeafGuardApi.saveScan({
+          ...detection,
+          plantName: detection.disease.split(' ')[0], // Use first word of disease as plant name
         });
-
-        // Update remaining scans if user is on free plan
-        if (user && !user.isSubscribed && typeof user.remainingFreeScans === 'number') {
-          // Decrement the remaining scans count
-          const newRemainingScans = user.remainingFreeScans - 1;
-          // You should implement updateRemainingScans in your AuthContext
-          // and pass it down through the context
-          if (typeof updateRemainingScans === 'function') {
-            updateRemainingScans(newRemainingScans);
-          }
-        }
+        await loadRecentScans(); // Reload recent scans
       }
     } catch (error) {
-      Alert.alert(
-        'Detection Failed',
-        error instanceof Error 
-          ? error.message 
-          : 'Failed to analyze the image. Please try again.'
-      );
+      let errorMessage = 'Failed to detect disease. Please try again.';
+      if (error instanceof Error) {
+        if (error.message.includes('insufficient_scans')) {
+          errorMessage = 'You have no remaining scans. Please upgrade your subscription.';
+        } else if (error.message.includes('network')) {
+          errorMessage = 'Network error. Please check your internet connection.';
+        } else {
+          errorMessage = error.message;
+        }
+      }
+      Alert.alert('Detection Failed', errorMessage);
     } finally {
       setIsLoading(false);
     }
@@ -170,6 +178,15 @@ export default function DiseaseDetectionScreen() {
   const resetDetection = () => {
     setSelectedImage(null);
     setResult(null);
+  };
+
+  const formatDate = (dateString: string) => {
+    const date = new Date(dateString);
+    return date.toLocaleDateString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+    });
   };
 
   const renderTreatmentRecommendations = () => {
@@ -239,9 +256,12 @@ export default function DiseaseDetectionScreen() {
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: isDark ? Theme.colors.background.dark : Theme.colors.background.light }]} edges={['top']}>
       <StatusBar style={isDark ? 'light' : 'dark'} />
-      <ScrollView 
+      <ScrollView
         style={styles.scrollView}
-        contentContainerStyle={styles.scrollContent}
+        contentContainerStyle={styles.content}
+        refreshControl={
+          <RefreshControl refreshing={isRefreshing} onRefresh={onRefresh} />
+        }
       >
         <View style={styles.header}>
           <Text style={[styles.title, { color: isDark ? Theme.colors.text.primary.dark : Theme.colors.text.primary.light }]}>
@@ -307,7 +327,7 @@ export default function DiseaseDetectionScreen() {
           title="Detect Disease"
           leftIcon={<Ionicons name="search-outline" size={20} color="#FFFFFF" />}
           style={styles.detectButton}
-          onPress={detectDisease}
+          onPress={() => {}}
           disabled={!selectedImage || isLoading}
           isLoading={isLoading}
         />
@@ -325,76 +345,56 @@ export default function DiseaseDetectionScreen() {
         )}
 
         {result && (
-          <View style={styles.resultContainer}>
-            <Card style={styles.resultCard}>
-              <View style={styles.resultHeader}>
-                <Text style={[
-                  styles.resultTitle, 
-                  { color: isDark ? Theme.colors.text.primary.dark : Theme.colors.text.primary.light }
-                ]}>
-                  Detection Result
-                </Text>
-                <View style={[styles.confidenceBadge, { 
-                  backgroundColor: result.confidence > 0.7 
-                    ? Theme.colors.statusBackground.success 
-                    : result.confidence > 0.5 
-                      ? Theme.colors.statusBackground.warning 
-                      : Theme.colors.statusBackground.error
-                }]}>
-                  <Text style={[styles.confidenceText, { 
-                    color: result.confidence > 0.7 
-                      ? Theme.colors.success 
-                      : result.confidence > 0.5 
-                        ? Theme.colors.warning 
-                        : Theme.colors.error
-                  }]}>
-                    {Math.round(result.confidence * 100)}% Confidence
-                  </Text>
-                </View>
-              </View>
-              
-              <View style={styles.imagesContainer}>
-                <View style={styles.imageWrapper}>
-                  <Text style={[styles.imageLabel, { color: isDark ? Theme.colors.text.secondary.dark : Theme.colors.text.secondary.light }]}>
-                    Original Image
-                  </Text>
-                  <Image source={{ uri: result.imageUri }} style={styles.resultImage} />
-                </View>
-                
-                {result.resultImageUri && (
-                  <View style={styles.imageWrapper}>
-                    <Text style={[styles.imageLabel, { color: isDark ? Theme.colors.text.secondary.dark : Theme.colors.text.secondary.light }]}>
-                      Analyzed Image
-                    </Text>
-                    <Image source={{ uri: result.resultImageUri }} style={styles.resultImage} />
-                  </View>
-                )}
-              </View>
+          <View style={styles.detectionResult}>
+            <Text style={styles.diseaseTitle}>{result.disease}</Text>
+            <Text style={styles.confidence}>
+              Confidence: {(result.confidence * 100).toFixed(2)}%
+            </Text>
+            
+            <Text style={styles.sectionTitle}>Description</Text>
+            <Text style={styles.description}>{result.description}</Text>
+            
+            <Text style={styles.sectionTitle}>Symptoms</Text>
+            {result.symptoms.map((symptom, index) => (
+              <Text key={index} style={styles.listItem}>• {symptom}</Text>
+            ))}
+            
+            <Text style={styles.sectionTitle}>Recommendations</Text>
+            {result.recommendations.map((recommendation, index) => (
+              <Text key={index} style={styles.listItem}>• {recommendation}</Text>
+            ))}
+            
+            <Text style={styles.sectionTitle}>Prevention</Text>
+            {result.preventions.map((prevention, index) => (
+              <Text key={index} style={styles.listItem}>• {prevention}</Text>
+            ))}
+            
+            <TouchableOpacity style={styles.resetButton} onPress={resetDetection}>
+              <Text style={styles.resetButtonText}>Scan Another Plant</Text>
+            </TouchableOpacity>
+          </View>
+        )}
 
-              <View style={styles.diseaseContainer}>
-                <Ionicons 
-                  name="alert-circle" 
-                  size={24} 
-                  color={Theme.colors.error} 
-                  style={styles.diseaseIcon}
-                />
-                <Text style={[
-                  styles.diseaseName, 
-                  { color: isDark ? Theme.colors.text.primary.dark : Theme.colors.text.primary.light }
-                ]}>
-                  {result.disease}
-                </Text>
-              </View>
-              
-              <Text style={[
-                styles.detectionTime, 
-                { color: isDark ? Theme.colors.text.secondary.dark : Theme.colors.text.secondary.light }
-              ]}>
-                Detected on {result.timestamp.toLocaleDateString()} at {result.timestamp.toLocaleTimeString()}
-              </Text>
-            </Card>
-
-            {renderTreatmentRecommendations()}
+        {/* Recent Scans */}
+        {!selectedImage && (
+          <View style={styles.recentScansContainer}>
+            <Text style={styles.sectionTitle}>Recent Scans</Text>
+            {recentScans.map((scan) => (
+              <Card key={scan._id} style={styles.scanCard}>
+                <Image source={{ uri: scan.imageUrl }} style={styles.scanImage} />
+                <View style={styles.scanInfo}>
+                  <Text style={styles.scanPlant}>{scan.plantName}</Text>
+                  <Text style={styles.scanDisease}>{scan.disease}</Text>
+                  <Text style={styles.scanDate}>{formatDate(scan.createdAt)}</Text>
+                </View>
+                <View style={styles.scanConfidence}>
+                  <Text style={styles.scanConfidenceText}>
+                    {(scan.confidence * 100).toFixed(0)}%
+                  </Text>
+                  <Text style={styles.confidenceLabel}>Confidence</Text>
+                </View>
+              </Card>
+            ))}
           </View>
         )}
       </ScrollView>
@@ -405,33 +405,148 @@ export default function DiseaseDetectionScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    backgroundColor: '#fff',
   },
   scrollView: {
     flex: 1,
   },
-  scrollContent: {
-    paddingHorizontal: Theme.spacing.lg,
-    paddingTop: Theme.spacing.md,
-    paddingBottom: Theme.spacing.xxl,
+  content: {
+    padding: 20,
+  },
+  title: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: Theme.colors.primary,
+    marginBottom: 20,
+    textAlign: 'center',
+  },
+  buttonContainer: {
+    gap: 16,
+  },
+  button: {
+    backgroundColor: Theme.colors.primary,
+    padding: 16,
+    borderRadius: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  buttonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  resultContainer: {
+    gap: 16,
+  },
+  image: {
+    width: '100%',
+    height: 300,
+    borderRadius: 8,
+    marginBottom: 16,
+  },
+  loadingContainer: {
+    alignItems: 'center',
+    gap: 8,
+  },
+  loadingText: {
+    fontSize: 16,
+    color: '#666',
+  },
+  detectionResult: {
+    gap: 12,
+  },
+  diseaseTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: Theme.colors.primary,
+  },
+  confidence: {
+    fontSize: 16,
+    color: '#666',
+    marginBottom: 8,
+  },
+  sectionTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    marginTop: 8,
+  },
+  description: {
+    fontSize: 16,
+    color: '#333',
+    lineHeight: 24,
+  },
+  listItem: {
+    fontSize: 16,
+    color: '#333',
+    marginLeft: 8,
+    marginBottom: 4,
+    lineHeight: 24,
+  },
+  resetButton: {
+    backgroundColor: Theme.colors.primary,
+    padding: 16,
+    borderRadius: 8,
+    alignItems: 'center',
+    marginTop: 16,
+  },
+  resetButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  recentScansContainer: {
+    marginTop: 32,
+    gap: 12,
+  },
+  scanCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 12,
+    marginBottom: 8,
+  },
+  scanImage: {
+    width: 60,
+    height: 60,
+    borderRadius: 8,
+  },
+  scanInfo: {
+    flex: 1,
+    marginLeft: 12,
+  },
+  scanPlant: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: Theme.colors.primary,
+  },
+  scanDisease: {
+    fontSize: 14,
+    color: Theme.colors.error,
+    marginTop: 2,
+  },
+  scanDate: {
+    fontSize: 12,
+    color: '#666',
+    marginTop: 2,
+  },
+  scanConfidence: {
+    alignItems: 'center',
+  },
+  scanConfidenceText: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: Theme.colors.primary,
+  },
+  confidenceLabel: {
+    fontSize: 12,
+    color: '#666',
   },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: Theme.spacing.lg,
-  },
-  title: {
-    fontSize: Theme.typography.fontSize.xxl,
-    fontWeight: 'bold',
-  },
-  scanCounter: {
-    paddingHorizontal: Theme.spacing.sm,
-    paddingVertical: Theme.spacing.xs,
-    borderRadius: Theme.borderRadius.round,
-  },
-  scanCounterText: {
-    fontSize: Theme.typography.fontSize.sm,
-    fontWeight: '500',
   },
   imageCard: {
     marginBottom: Theme.spacing.lg,
@@ -446,13 +561,6 @@ const styles = StyleSheet.create({
     height: 300,
     resizeMode: 'cover',
   },
-  resetButton: {
-    position: 'absolute',
-    top: Theme.spacing.sm,
-    right: Theme.spacing.sm,
-    borderRadius: 20,
-    padding: Theme.spacing.xxs,
-  },
   placeholderContainer: {
     height: 200,
     alignItems: 'center',
@@ -464,11 +572,6 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginTop: Theme.spacing.md,
   },
-  buttonContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: Theme.spacing.lg,
-  },
   actionButton: {
     flex: 1,
     marginHorizontal: Theme.spacing.xs,
@@ -476,73 +579,14 @@ const styles = StyleSheet.create({
   detectButton: {
     marginBottom: Theme.spacing.xl,
   },
-  loadingContainer: {
-    alignItems: 'center',
-    marginVertical: Theme.spacing.lg,
-  },
-  loadingText: {
-    fontSize: Theme.typography.fontSize.md,
-    marginTop: Theme.spacing.sm,
-  },
-  resultContainer: {
-    marginBottom: Theme.spacing.lg,
-  },
-  resultCard: {
-    marginBottom: Theme.spacing.lg,
-  },
-  resultHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: Theme.spacing.md,
-  },
-  resultTitle: {
-    fontSize: Theme.typography.fontSize.lg,
-    fontWeight: '600',
-  },
-  confidenceBadge: {
+  scanCounter: {
     paddingHorizontal: Theme.spacing.sm,
     paddingVertical: Theme.spacing.xs,
     borderRadius: Theme.borderRadius.round,
   },
-  confidenceText: {
+  scanCounterText: {
     fontSize: Theme.typography.fontSize.sm,
     fontWeight: '500',
-  },
-  imagesContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginVertical: Theme.spacing.md,
-  },
-  imageWrapper: {
-    flex: 1,
-    marginHorizontal: Theme.spacing.xs,
-  },
-  imageLabel: {
-    fontSize: Theme.typography.fontSize.sm,
-    marginBottom: Theme.spacing.xs,
-    textAlign: 'center',
-  },
-  resultImage: {
-    width: '100%',
-    height: 150,
-    borderRadius: Theme.borderRadius.sm,
-    resizeMode: 'cover',
-  },
-  diseaseContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: Theme.spacing.md,
-  },
-  diseaseIcon: {
-    marginRight: Theme.spacing.sm,
-  },
-  diseaseName: {
-    fontSize: Theme.typography.fontSize.xl,
-    fontWeight: 'bold',
-  },
-  detectionTime: {
-    fontSize: Theme.typography.fontSize.sm,
   },
   treatmentCard: {
     marginBottom: Theme.spacing.lg,

@@ -3,410 +3,234 @@ import {
   View,
   Text,
   StyleSheet,
-  ScrollView,
-  RefreshControl,
+  TextInput,
   TouchableOpacity,
-  Dimensions,
+  Image,
+  ScrollView,
+  ActivityIndicator,
+  Alert,
+  useColorScheme,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useColorScheme } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import * as Location from 'expo-location';
 import { StatusBar } from 'expo-status-bar';
 
 import { Theme } from '../../constants/Theme';
 import { Card } from '../../components/ui/Card';
-import { useAuth } from '../../contexts/AuthContext';
-
-// Mock data for environmental conditions
-const mockWeatherData = {
-  current: {
-    temperature: 24,
-    humidity: 65,
-    windSpeed: 12,
-    precipitation: 0,
-    condition: 'Partly Cloudy',
-    icon: 'partly-sunny',
-  },
-  forecast: [
-    { day: 'Mon', temperature: 24, condition: 'partly-sunny' },
-    { day: 'Tue', temperature: 26, condition: 'sunny' },
-    { day: 'Wed', temperature: 23, condition: 'rainy' },
-    { day: 'Thu', temperature: 22, condition: 'cloudy' },
-    { day: 'Fri', temperature: 25, condition: 'sunny' },
-  ],
-  historical: {
-    temperature: [22, 23, 24, 25, 24, 23, 24],
-    humidity: [60, 65, 70, 68, 65, 63, 65],
-    precipitation: [0, 5, 10, 2, 0, 0, 0],
-    dates: ['6 days ago', '5 days ago', '4 days ago', '3 days ago', '2 days ago', 'Yesterday', 'Today'],
-  },
-  diseaseRisk: {
-    level: 'Medium',
-    factors: [
-      'Moderate humidity levels',
-      'Warm temperatures',
-      'Recent precipitation',
-    ],
-    recommendations: [
-      'Monitor plants for early signs of disease',
-      'Consider preventative fungicide application',
-      'Ensure good air circulation around plants',
-    ],
-  },
-};
-
-// Weather condition icons mapping
-const weatherIcons = {
-  'sunny': 'sunny',
-  'partly-sunny': 'partly-sunny',
-  'cloudy': 'cloudy',
-  'rainy': 'rainy',
-  'thunderstorm': 'thunderstorm',
-};
-
-// Risk level colors
-const riskColors = {
-  'Low': Theme.colors.success,
-  'Medium': Theme.colors.warning,
-  'High': Theme.colors.error,
-};
-
-// Custom Bar Chart Component
-interface SimpleBarChartProps {
-  data: number[];
-  labels: string[];
-  height?: number;
-  barColor?: string;
-  maxValue?: number | null;
-  yAxisSuffix?: string;
-  isDark?: boolean;
-}
-
-const SimpleBarChart: React.FC<SimpleBarChartProps> = ({ 
-  data, 
-  labels, 
-  height = 180, 
-  barColor = Theme.colors.primary,
-  maxValue = null,
-  yAxisSuffix = '',
-  isDark = false 
-}) => {
-  // Calculate the maximum value for scaling
-  const max = maxValue !== null ? maxValue : Math.max(...data) * 1.2;
-  
-  return (
-    <View style={styles.simpleChartContainer}>
-      <View style={styles.yAxisLabels}>
-        <Text style={[styles.axisLabel, { color: isDark ? '#FFFFFF' : '#2C3D32' }]}>
-          {max}{yAxisSuffix}
-        </Text>
-        <Text style={[styles.axisLabel, { color: isDark ? '#FFFFFF' : '#2C3D32' }]}>
-          {Math.round(max/2)}{yAxisSuffix}
-        </Text>
-        <Text style={[styles.axisLabel, { color: isDark ? '#FFFFFF' : '#2C3D32' }]}>
-          0{yAxisSuffix}
-        </Text>
-      </View>
-      
-      <View style={styles.chartContent}>
-        <View style={styles.horizontalGridLines}>
-          <View style={styles.gridLine} />
-          <View style={styles.gridLine} />
-          <View style={styles.gridLine} />
-        </View>
-        
-        <View style={styles.barsContainer}>
-          {data.map((value: number, index: number) => (
-            <View key={index} style={styles.barColumn}>
-              <View style={[
-                styles.bar, 
-                { 
-                  height: `${(value / max) * 100}%`,
-                  backgroundColor: barColor
-                }
-              ]} />
-              <Text style={[styles.barLabel, { color: isDark ? '#FFFFFF' : '#2C3D32' }]}>
-                {labels[index]}
-              </Text>
-            </View>
-          ))}
-        </View>
-      </View>
-    </View>
-  );
-};
+import { Button } from '../../components/ui/Button';
+import { weatherService, WeatherData } from '../../services/WeatherService';
 
 export default function EnvironmentalDataScreen() {
-  const { user } = useAuth();
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
-  const [isRefreshing, setIsRefreshing] = useState(false);
-  const [weatherData, setWeatherData] = useState(mockWeatherData);
-  const [selectedTimeframe, setSelectedTimeframe] = useState('week');
 
-  const screenWidth = Dimensions.get('window').width - (Theme.spacing.lg * 2);
+  const [city, setCity] = useState('');
+  const [weatherData, setWeatherData] = useState<WeatherData | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [useCurrentLocation, setUseCurrentLocation] = useState(false);
 
-  const onRefresh = async () => {
-    setIsRefreshing(true);
-    // In a real app, you would fetch updated data here
-    setTimeout(() => {
-      setIsRefreshing(false);
-    }, 1500);
+  useEffect(() => {
+    checkLocationPermission();
+  }, []);
+
+  const checkLocationPermission = async () => {
+    const { status } = await Location.requestForegroundPermissionsAsync();
+    if (status === 'granted') {
+      getCurrentLocation();
+    }
+  };
+
+  const getCurrentLocation = async () => {
+    try {
+      setIsLoading(true);
+      const location = await Location.getCurrentPositionAsync({});
+      const { latitude, longitude } = location.coords;
+      const weather = await weatherService.getWeatherByCoordinates(latitude, longitude);
+      setWeatherData(weather);
+      setUseCurrentLocation(true);
+    } catch (error) {
+      Alert.alert('Error', 'Failed to get current location. Please enter a city manually.');
+      setUseCurrentLocation(false);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const searchCity = async () => {
+    if (!city.trim()) {
+      Alert.alert('Error', 'Please enter a city name');
+      return;
+    }
+
+    try {
+      setIsLoading(true);
+      const weather = await weatherService.getWeatherByCity(city.trim());
+      setWeatherData(weather);
+      setUseCurrentLocation(false);
+    } catch (error) {
+      Alert.alert('Error', error instanceof Error ? error.message : 'Failed to fetch weather data');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const formatTime = (timestamp: number) => {
+    return new Date(timestamp * 1000).toLocaleTimeString('en-US', {
+      hour: 'numeric',
+      minute: '2-digit',
+      hour12: true,
+    });
   };
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: isDark ? Theme.colors.background.dark : Theme.colors.background.light }]} edges={['top']}>
+    <SafeAreaView style={[styles.container, { backgroundColor: isDark ? Theme.colors.background.dark : Theme.colors.background.light }]}>
       <StatusBar style={isDark ? 'light' : 'dark'} />
-      <ScrollView
-        style={styles.scrollView}
-        contentContainerStyle={styles.scrollContent}
-        refreshControl={
-          <RefreshControl refreshing={isRefreshing} onRefresh={onRefresh} />
-        }
-      >
-        <View style={styles.header}>
-          <Text style={[styles.title, { color: '#2C3D32' }]}>
-            Environmental Data
-          </Text>
-        </View>
+      <ScrollView style={styles.scrollView} contentContainerStyle={styles.content}>
+        <Text style={[styles.title, { color: isDark ? Theme.colors.text.primary.dark : Theme.colors.text.primary.light }]}>
+          Environmental Data
+        </Text>
 
-        {/* Current Weather Card */}
-        <Card style={styles.currentWeatherCard}>
-          <View style={styles.currentWeatherHeader}>
-            <View>
-              <Text style={[styles.currentWeatherTitle, { color: '#2C3D32' }]}>
-                Current Weather
-              </Text>
-              <Text style={[styles.currentWeatherLocation, { color: '#445C4B' }]}>
-                Your Location
-              </Text>
-            </View>
-            <Ionicons 
-              name={weatherData.current.icon as keyof typeof Ionicons.glyphMap} 
-              size={48} 
-              color={Theme.colors.primary} 
+        <Card style={styles.searchCard}>
+          <View style={styles.searchContainer}>
+            <TextInput
+              style={[styles.searchInput, { 
+                color: isDark ? Theme.colors.text.primary.dark : Theme.colors.text.primary.light,
+                borderColor: isDark ? Theme.colors.border.dark : Theme.colors.border.light,
+              }]}
+              placeholder="Enter city name"
+              placeholderTextColor={isDark ? Theme.colors.text.disabled.dark : Theme.colors.text.disabled.light}
+              value={city}
+              onChangeText={setCity}
+              onSubmitEditing={searchCity}
             />
+            <TouchableOpacity style={styles.searchButton} onPress={searchCity}>
+              <Ionicons name="search" size={24} color="#fff" />
+            </TouchableOpacity>
           </View>
           
-          <View style={styles.currentWeatherDetails}>
-            <View style={styles.temperatureContainer}>
-              <Text style={[styles.temperatureValue, { color: '#2C3D32' }]}>
-                {weatherData.current.temperature}°C
-              </Text>
-              <Text style={[styles.weatherCondition, { color: '#445C4B' }]}>
-                {weatherData.current.condition}
-              </Text>
-            </View>
-            
-            <View style={styles.weatherMetrics}>
-              <View style={styles.metricItem}>
-                <Ionicons name="water-outline" size={20} color={Theme.colors.info} />
-                <Text style={[styles.metricValue, { color: '#2C3D32' }]}>
-                  {weatherData.current.humidity}%
-                </Text>
-                <Text style={[styles.metricLabel, { color: '#445C4B' }]}>
-                  Humidity
-                </Text>
-              </View>
-              
-              <View style={styles.metricItem}>
-                <Ionicons name="speedometer-outline" size={20} color={Theme.colors.secondary} />
-                <Text style={[styles.metricValue, { color: '#2C3D32' }]}>
-                  {weatherData.current.windSpeed} km/h
-                </Text>
-                <Text style={[styles.metricLabel, { color: '#445C4B' }]}>
-                  Wind
-                </Text>
-              </View>
-              
-              <View style={styles.metricItem}>
-                <Ionicons name="rainy-outline" size={20} color={Theme.colors.primary} />
-                <Text style={[styles.metricValue, { color: '#2C3D32' }]}>
-                  {weatherData.current.precipitation} mm
-                </Text>
-                <Text style={[styles.metricLabel, { color: '#445C4B' }]}>
-                  Rain
-                </Text>
-              </View>
-            </View>
-          </View>
+          <Button
+            title="Use Current Location"
+            variant="outline"
+            leftIcon={<Ionicons name="location" size={20} color={Theme.colors.primary} />}
+            onPress={getCurrentLocation}
+            style={styles.locationButton}
+          />
         </Card>
 
-        {/* 5-Day Forecast */}
-        <Card style={styles.forecastCard}>
-          <Text style={[styles.sectionTitle, { color: '#2C3D32' }]}>
-            5-Day Forecast
-          </Text>
-          
-          <View style={styles.forecastContainer}>
-            {weatherData.forecast.map((day, index) => (
-              <View key={index} style={styles.forecastDay}>
-                <Text style={[styles.forecastDayName, { color: '#2C3D32' }]}>
-                  {day.day}
-                </Text>
+        {isLoading ? (
+          <View style={styles.loadingContainer}>
+            <ActivityIndicator size="large" color={Theme.colors.primary} />
+            <Text style={[styles.loadingText, { color: isDark ? Theme.colors.text.primary.dark : Theme.colors.text.primary.light }]}>
+              Fetching weather data...
+            </Text>
+          </View>
+        ) : weatherData ? (
+          <View style={styles.weatherContainer}>
+            <Card style={styles.mainWeatherCard}>
+              <View style={styles.locationContainer}>
                 <Ionicons 
-                  name={day.condition as keyof typeof Ionicons.glyphMap} 
+                  name="location" 
                   size={24} 
-                  color={Theme.colors.primary} 
+                  color={isDark ? Theme.colors.text.primary.dark : Theme.colors.text.primary.light} 
                 />
-                <Text style={[styles.forecastTemperature, { color: '#2C3D32' }]}>
-                  {day.temperature}°C
+                <Text style={[styles.location, { color: isDark ? Theme.colors.text.primary.dark : Theme.colors.text.primary.light }]}>
+                  {weatherData.location}
                 </Text>
               </View>
-            ))}
-          </View>
-        </Card>
 
-        {/* Historical Data Charts */}
-        <Card style={styles.chartsCard}>
-          <View style={styles.chartHeader}>
-            <Text style={[styles.sectionTitle, { color: '#2C3D32' }]}>
-              Historical Data
-            </Text>
-            
-            <View style={styles.timeframeSelector}>
-              <TouchableOpacity 
-                style={[
-                  styles.timeframeButton, 
-                  selectedTimeframe === 'week' && { backgroundColor: Theme.colors.primaryLight }
-                ]}
-                onPress={() => setSelectedTimeframe('week')}
-              >
-                <Text style={[
-                  styles.timeframeText,
-                  selectedTimeframe === 'week' && { color: '#2C3D32', fontWeight: '600' }
-                ]}>
-                  Week
+              <View style={styles.weatherMain}>
+                <Image source={{ uri: weatherData.icon }} style={styles.weatherIcon} />
+                <Text style={[styles.temperature, { color: isDark ? Theme.colors.text.primary.dark : Theme.colors.text.primary.light }]}>
+                  {Math.round(weatherData.temperature)}°C
                 </Text>
-              </TouchableOpacity>
-              
-              <TouchableOpacity 
-                style={[
-                  styles.timeframeButton, 
-                  selectedTimeframe === 'month' && { backgroundColor: Theme.colors.primaryLight }
-                ]}
-                onPress={() => setSelectedTimeframe('month')}
-              >
-                <Text style={[
-                  styles.timeframeText,
-                  selectedTimeframe === 'month' && { color: '#2C3D32', fontWeight: '600' }
-                ]}>
-                  Month
+                <Text style={[styles.description, { color: isDark ? Theme.colors.text.secondary.dark : Theme.colors.text.secondary.light }]}>
+                  {weatherData.description}
                 </Text>
-              </TouchableOpacity>
-              
-              <TouchableOpacity 
-                style={[
-                  styles.timeframeButton, 
-                  selectedTimeframe === 'year' && { backgroundColor: Theme.colors.primaryLight }
-                ]}
-                onPress={() => setSelectedTimeframe('year')}
-              >
-                <Text style={[
-                  styles.timeframeText,
-                  selectedTimeframe === 'year' && { color: '#2C3D32', fontWeight: '600' }
-                ]}>
-                  Year
-                </Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-          
-          <View style={styles.chartContainer}>
-            <Text style={[styles.chartTitle, { color: '#2C3D32' }]}>
-              Temperature
-            </Text>
-            <SimpleBarChart 
-              data={weatherData.historical.temperature}
-              labels={weatherData.historical.dates}
-              barColor="#FF9800"
-              yAxisSuffix="°C"
-              isDark={isDark}
-            />
-          </View>
-          
-          <View style={styles.chartContainer}>
-            <Text style={[styles.chartTitle, { color: '#2C3D32' }]}>
-              Humidity
-            </Text>
-            <SimpleBarChart 
-              data={weatherData.historical.humidity}
-              labels={weatherData.historical.dates}
-              barColor="#2196F3"
-              yAxisSuffix="%"
-              isDark={isDark}
-            />
-          </View>
-          
-          <View style={styles.chartContainer}>
-            <Text style={[styles.chartTitle, { color: '#2C3D32' }]}>
-              Precipitation
-            </Text>
-            <SimpleBarChart 
-              data={weatherData.historical.precipitation}
-              labels={weatherData.historical.dates}
-              barColor="#4CAF50"
-              yAxisSuffix="mm"
-              maxValue={15}
-              isDark={isDark}
-            />
-          </View>
-        </Card>
+              </View>
 
-        {/* Disease Risk Assessment */}
-        <Card style={styles.riskCard}>
-          <Text style={[styles.sectionTitle, { color: '#2C3D32' }]}>
-            Disease Risk Assessment
-          </Text>
-          
-          <View style={styles.riskLevelContainer}>
-            <View style={[
-              styles.riskLevelBadge, 
-              { backgroundColor: riskColors[weatherData.diseaseRisk.level as keyof typeof riskColors] + '20' }
-            ]}>
-              <Text style={[
-                styles.riskLevelText, 
-                { color: riskColors[weatherData.diseaseRisk.level as keyof typeof riskColors] }
-              ]}>
-                {weatherData.diseaseRisk.level} Risk
+              <View style={styles.weatherDetails}>
+                <View style={styles.detailItem}>
+                  <Ionicons name="water" size={20} color={Theme.colors.primary} />
+                  <Text style={[styles.detailText, { color: isDark ? Theme.colors.text.primary.dark : Theme.colors.text.primary.light }]}>
+                    Humidity: {weatherData.humidity}%
+                  </Text>
+                </View>
+                
+                <View style={styles.detailItem}>
+                  <Ionicons name="speedometer" size={20} color={Theme.colors.primary} />
+                  <Text style={[styles.detailText, { color: isDark ? Theme.colors.text.primary.dark : Theme.colors.text.primary.light }]}>
+                    Pressure: {weatherData.pressure} hPa
+                  </Text>
+                </View>
+
+                <View style={styles.detailItem}>
+                  <Ionicons name="thermometer" size={20} color={Theme.colors.primary} />
+                  <Text style={[styles.detailText, { color: isDark ? Theme.colors.text.primary.dark : Theme.colors.text.primary.light }]}>
+                    Feels like: {Math.round(weatherData.feelsLike)}°C
+                  </Text>
+                </View>
+
+                <View style={styles.detailItem}>
+                  <Ionicons name="speedometer-outline" size={20} color={Theme.colors.primary} />
+                  <Text style={[styles.detailText, { color: isDark ? Theme.colors.text.primary.dark : Theme.colors.text.primary.light }]}>
+                    Wind: {weatherData.windSpeed} m/s
+                  </Text>
+                </View>
+              </View>
+
+              <View style={styles.sunTimes}>
+                <View style={styles.sunTimeItem}>
+                  <Ionicons name="sunny" size={24} color={Theme.colors.warning} />
+                  <Text style={[styles.sunTimeText, { color: isDark ? Theme.colors.text.primary.dark : Theme.colors.text.primary.light }]}>
+                    Sunrise: {formatTime(weatherData.sunrise)}
+                  </Text>
+                </View>
+                
+                <View style={styles.sunTimeItem}>
+                  <Ionicons name="moon" size={24} color={Theme.colors.info} />
+                  <Text style={[styles.sunTimeText, { color: isDark ? Theme.colors.text.primary.dark : Theme.colors.text.primary.light }]}>
+                    Sunset: {formatTime(weatherData.sunset)}
+                  </Text>
+                </View>
+              </View>
+            </Card>
+
+            <Card style={styles.recommendationsCard}>
+              <Text style={[styles.recommendationsTitle, { color: isDark ? Theme.colors.text.primary.dark : Theme.colors.text.primary.light }]}>
+                Plant Care Recommendations
               </Text>
-            </View>
-          </View>
-          
-          <View style={styles.riskSection}>
-            <Text style={[styles.riskSectionTitle, { color: '#2C3D32' }]}>
-              Risk Factors
-            </Text>
-            {weatherData.diseaseRisk.factors.map((factor, index) => (
-              <View key={index} style={styles.riskItem}>
-                <Ionicons name="alert-circle-outline" size={20} color={Theme.colors.warning} />
-                <Text style={[
-                  styles.riskItemText, 
-                  { color: '#2C3D32' }
-                ]}>
-                  {factor}
+              
+              <View style={styles.recommendation}>
+                <Ionicons name="water" size={20} color={Theme.colors.primary} />
+                <Text style={[styles.recommendationText, { color: isDark ? Theme.colors.text.primary.dark : Theme.colors.text.primary.light }]}>
+                  {weatherData.humidity < 40 ? 'Low humidity - Consider misting your plants' :
+                   weatherData.humidity > 70 ? 'High humidity - Ensure good air circulation' :
+                   'Optimal humidity for most plants'}
                 </Text>
               </View>
-            ))}
-          </View>
-          
-          <View style={styles.riskSection}>
-            <Text style={[styles.riskSectionTitle, { color: '#2C3D32' }]}>
-              Recommendations
-            </Text>
-            {weatherData.diseaseRisk.recommendations.map((recommendation, index) => (
-              <View key={index} style={styles.riskItem}>
-                <Ionicons name="checkmark-circle-outline" size={20} color={Theme.colors.success} />
-                <Text style={[
-                  styles.riskItemText, 
-                  { color: '#2C3D32' }
-                ]}>
-                  {recommendation}
+
+              <View style={styles.recommendation}>
+                <Ionicons name="thermometer" size={20} color={Theme.colors.primary} />
+                <Text style={[styles.recommendationText, { color: isDark ? Theme.colors.text.primary.dark : Theme.colors.text.primary.light }]}>
+                  {weatherData.temperature < 10 ? 'Protect plants from cold temperatures' :
+                   weatherData.temperature > 30 ? 'Provide shade and extra water' :
+                   'Temperature is suitable for most plants'}
                 </Text>
               </View>
-            ))}
+
+              <View style={styles.recommendation}>
+                <Ionicons name="sunny" size={20} color={Theme.colors.primary} />
+                <Text style={[styles.recommendationText, { color: isDark ? Theme.colors.text.primary.dark : Theme.colors.text.primary.light }]}>
+                  {weatherData.description.includes('clear') ? 'Good day for photosynthesis' :
+                   weatherData.description.includes('cloud') ? 'Reduced light - monitor plant growth' :
+                   weatherData.description.includes('rain') ? 'Hold off on watering plants' :
+                   'Monitor plant water needs'}
+                </Text>
+              </View>
+            </Card>
           </View>
-        </Card>
+        ) : null}
       </ScrollView>
     </SafeAreaView>
   );
@@ -419,213 +243,127 @@ const styles = StyleSheet.create({
   scrollView: {
     flex: 1,
   },
-  scrollContent: {
-    paddingHorizontal: Theme.spacing.lg,
-    paddingTop: Theme.spacing.md,
-    paddingBottom: Theme.spacing.xxl,
-  },
-  header: {
-    marginBottom: Theme.spacing.lg,
+  content: {
+    padding: 20,
   },
   title: {
-    fontSize: Theme.typography.fontSize.xxl,
+    fontSize: 24,
     fontWeight: 'bold',
-  },
-  currentWeatherCard: {
-    marginBottom: Theme.spacing.lg,
-  },
-  currentWeatherHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: Theme.spacing.md,
-  },
-  currentWeatherTitle: {
-    fontSize: Theme.typography.fontSize.lg,
-    fontWeight: '600',
-  },
-  currentWeatherLocation: {
-    fontSize: Theme.typography.fontSize.sm,
-    marginTop: Theme.spacing.xxs,
-  },
-  currentWeatherDetails: {
-    marginTop: Theme.spacing.sm,
-  },
-  temperatureContainer: {
-    marginBottom: Theme.spacing.md,
-  },
-  temperatureValue: {
-    fontSize: Theme.typography.fontSize.xxxl,
-    fontWeight: 'bold',
-  },
-  weatherCondition: {
-    fontSize: Theme.typography.fontSize.md,
-  },
-  weatherMetrics: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  metricItem: {
-    alignItems: 'center',
-    flex: 1,
-  },
-  metricValue: {
-    fontSize: Theme.typography.fontSize.md,
-    fontWeight: '600',
-    marginTop: Theme.spacing.xs,
-  },
-  metricLabel: {
-    fontSize: Theme.typography.fontSize.sm,
-    marginTop: Theme.spacing.xxs,
-  },
-  forecastCard: {
-    marginBottom: Theme.spacing.lg,
-  },
-  sectionTitle: {
-    fontSize: Theme.typography.fontSize.lg,
-    fontWeight: '600',
-    marginBottom: Theme.spacing.md,
-  },
-  forecastContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  forecastDay: {
-    alignItems: 'center',
-    flex: 1,
-  },
-  forecastDayName: {
-    fontSize: Theme.typography.fontSize.sm,
-    marginBottom: Theme.spacing.xs,
-  },
-  forecastTemperature: {
-    fontSize: Theme.typography.fontSize.md,
-    fontWeight: '600',
-    marginTop: Theme.spacing.xs,
-  },
-  chartsCard: {
-    marginBottom: Theme.spacing.lg,
-  },
-  chartHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: Theme.spacing.md,
-  },
-  timeframeSelector: {
-    flexDirection: 'row',
-    backgroundColor: 'rgba(0, 0, 0, 0.05)',
-    borderRadius: Theme.borderRadius.round,
-    padding: Theme.spacing.xxs,
-  },
-  timeframeButton: {
-    paddingHorizontal: Theme.spacing.sm,
-    paddingVertical: Theme.spacing.xs,
-    borderRadius: Theme.borderRadius.round,
-  },
-  timeframeText: {
-    fontSize: Theme.typography.fontSize.sm,
-    color: '#445C4B',
-  },
-  chartContainer: {
-    marginBottom: Theme.spacing.lg,
-  },
-  chartTitle: {
-    fontSize: Theme.typography.fontSize.md,
-    fontWeight: '600',
-    marginBottom: Theme.spacing.sm,
-  },
-  simpleChartContainer: {
-    height: 180,
-    flexDirection: 'row',
-    marginTop: Theme.spacing.md,
-  },
-  yAxisLabels: {
-    width: 40,
-    height: '100%',
-    justifyContent: 'space-between',
-    alignItems: 'flex-end',
-    paddingRight: Theme.spacing.xs,
-    paddingVertical: Theme.spacing.xs,
-  },
-  axisLabel: {
-    fontSize: 10,
-    color: '#445C4B',
-  },
-  chartContent: {
-    flex: 1,
-    height: '100%',
-    position: 'relative',
-  },
-  horizontalGridLines: {
-    position: 'absolute',
-    width: '100%',
-    height: '100%',
-    justifyContent: 'space-between',
-    paddingVertical: Theme.spacing.xs,
-  },
-  gridLine: {
-    height: 1,
-    width: '100%',
-    backgroundColor: 'rgba(0, 0, 0, 0.1)',
-  },
-  barsContainer: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-    justifyContent: 'space-around',
-    paddingBottom: 20, // Space for labels
-  },
-  barColumn: {
-    flex: 1,
-    height: '100%',
-    alignItems: 'center',
-    justifyContent: 'flex-end',
-    paddingHorizontal: 2,
-  },
-  bar: {
-    width: '80%',
-    minHeight: 4,
-    borderTopLeftRadius: 4,
-    borderTopRightRadius: 4,
-  },
-  barLabel: {
-    fontSize: 8,
-    marginTop: 4,
+    marginBottom: 20,
     textAlign: 'center',
   },
-  riskCard: {
-    marginBottom: Theme.spacing.lg,
+  searchCard: {
+    marginBottom: 20,
   },
-  riskLevelContainer: {
+  searchContainer: {
+    flexDirection: 'row',
+    marginBottom: 12,
+  },
+  searchInput: {
+    flex: 1,
+    height: 48,
+    borderWidth: 1,
+    borderRadius: 8,
+    paddingHorizontal: 16,
+    marginRight: 8,
+    fontSize: 16,
+  },
+  searchButton: {
+    width: 48,
+    height: 48,
+    backgroundColor: Theme.colors.primary,
+    borderRadius: 8,
+    justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: Theme.spacing.md,
   },
-  riskLevelBadge: {
-    paddingHorizontal: Theme.spacing.md,
-    paddingVertical: Theme.spacing.xs,
-    borderRadius: Theme.borderRadius.round,
+  locationButton: {
+    marginTop: 8,
   },
-  riskLevelText: {
-    fontSize: Theme.typography.fontSize.md,
-    fontWeight: '600',
+  loadingContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 20,
   },
-  riskSection: {
-    marginBottom: Theme.spacing.md,
+  loadingText: {
+    marginTop: 10,
+    fontSize: 16,
   },
-  riskSectionTitle: {
-    fontSize: Theme.typography.fontSize.md,
-    fontWeight: '600',
-    marginBottom: Theme.spacing.sm,
+  weatherContainer: {
+    gap: 20,
   },
-  riskItem: {
+  mainWeatherCard: {
+    padding: 20,
+  },
+  locationContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: Theme.spacing.sm,
+    marginBottom: 20,
   },
-  riskItemText: {
-    fontSize: Theme.typography.fontSize.md,
-    marginLeft: Theme.spacing.sm,
+  location: {
+    fontSize: 20,
+    fontWeight: '600',
+    marginLeft: 8,
+  },
+  weatherMain: {
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  weatherIcon: {
+    width: 100,
+    height: 100,
+  },
+  temperature: {
+    fontSize: 48,
+    fontWeight: 'bold',
+    marginVertical: 10,
+  },
+  description: {
+    fontSize: 18,
+    textTransform: 'capitalize',
+  },
+  weatherDetails: {
+    marginBottom: 20,
+  },
+  detailItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  detailText: {
+    fontSize: 16,
+    marginLeft: 12,
+  },
+  sunTimes: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    paddingTop: 16,
+    borderTopWidth: 1,
+    borderTopColor: Theme.colors.border.light,
+  },
+  sunTimeItem: {
+    alignItems: 'center',
+  },
+  sunTimeText: {
+    fontSize: 14,
+    marginTop: 4,
+  },
+  recommendationsCard: {
+    padding: 20,
+  },
+  recommendationsTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    marginBottom: 16,
+  },
+  recommendation: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    marginBottom: 12,
+  },
+  recommendationText: {
     flex: 1,
+    fontSize: 16,
+    marginLeft: 12,
+    lineHeight: 22,
   },
 }); 

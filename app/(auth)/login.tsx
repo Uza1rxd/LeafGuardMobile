@@ -13,13 +13,11 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '../../contexts/AuthContext';
 import { Theme } from '../../constants/Theme';
 
-export default function RegisterScreen() {
+export default function LoginScreen() {
   const router = useRouter();
-  const { register } = useAuth();
-  const [name, setName] = useState('');
+  const { login } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
 
   const validateEmail = (email: string) => {
@@ -27,21 +25,10 @@ export default function RegisterScreen() {
     return emailRegex.test(email);
   };
 
-  const validatePassword = (password: string) => {
-    // At least 6 characters, 1 uppercase, 1 lowercase, 1 number
-    const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{6,}$/;
-    return passwordRegex.test(password);
-  };
-
-  const handleRegister = async () => {
+  const handleLogin = async () => {
     // Input validation
-    if (!name || !email || !password || !confirmPassword) {
+    if (!email || !password) {
       Alert.alert('Error', 'Please fill in all fields');
-      return;
-    }
-
-    if (name.length < 2) {
-      Alert.alert('Error', 'Name must be at least 2 characters long');
       return;
     }
 
@@ -50,40 +37,26 @@ export default function RegisterScreen() {
       return;
     }
 
-    if (!validatePassword(password)) {
-      Alert.alert(
-        'Error',
-        'Password must be at least 6 characters long and contain at least one uppercase letter, one lowercase letter, and one number'
-      );
-      return;
-    }
-
-    if (password !== confirmPassword) {
-      Alert.alert('Error', 'Passwords do not match');
+    if (password.length < 6) {
+      Alert.alert('Error', 'Password must be at least 6 characters long');
       return;
     }
 
     setIsLoading(true);
     try {
-      await register(name, email, password);
-      Alert.alert(
-        'Registration Successful',
-        'Your account has been created successfully. Please log in to continue.',
-        [
-          {
-            text: 'OK',
-            onPress: () => router.replace('/(auth)/login'),
-          },
-        ]
-      );
+      await login(email, password);
+      console.log('Login successful');
+      router.replace('/');
     } catch (error) {
-      let errorMessage = 'Registration failed. Please try again';
+      let errorMessage = 'Please check your credentials and try again';
       
       if (error instanceof Error) {
-        if (error.message.includes('409') || error.message.includes('duplicate')) {
-          errorMessage = 'An account with this email already exists. Please use a different email or log in.';
-        } else if (error.message.includes('validation')) {
-          errorMessage = 'Please check your information and try again.';
+        if (error.message.includes('401') || error.message.includes('unauthorized')) {
+          errorMessage = 'Invalid email or password. Please try again.';
+        } else if (error.message.includes('404')) {
+          errorMessage = 'Account not found. Please check your email or sign up.';
+        } else if (error.message.includes('locked')) {
+          errorMessage = 'Account locked. Please try again later or reset your password.';
         } else if (error.message.includes('network')) {
           errorMessage = 'Network error. Please check your internet connection and try again.';
         } else {
@@ -91,35 +64,27 @@ export default function RegisterScreen() {
         }
       }
       
-      Alert.alert('Registration Failed', errorMessage);
+      Alert.alert('Login Failed', errorMessage);
     } finally {
       setIsLoading(false);
     }
   };
 
-  const navigateToLogin = () => {
-    router.push('/(auth)/login');
+  const navigateToRegister = () => {
+    router.push('/(auth)/register');
+  };
+
+  const navigateToForgotPassword = () => {
+    router.push('/(auth)/forgot-password');
   };
 
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.content}>
-        <Text style={styles.title}>Create Account</Text>
-        <Text style={styles.subtitle}>Sign up to get started</Text>
+        <Text style={styles.title}>Welcome Back</Text>
+        <Text style={styles.subtitle}>Sign in to continue</Text>
 
         <View style={styles.form}>
-          <View style={styles.inputContainer}>
-            <Text style={styles.label}>Name</Text>
-            <TextInput
-              style={styles.input}
-              value={name}
-              onChangeText={setName}
-              placeholder="Enter your name"
-              autoCapitalize="words"
-              autoComplete="name"
-            />
-          </View>
-
           <View style={styles.inputContainer}>
             <Text style={styles.label}>Email</Text>
             <TextInput
@@ -144,33 +109,29 @@ export default function RegisterScreen() {
             />
           </View>
 
-          <View style={styles.inputContainer}>
-            <Text style={styles.label}>Confirm Password</Text>
-            <TextInput
-              style={styles.input}
-              value={confirmPassword}
-              onChangeText={setConfirmPassword}
-              placeholder="Confirm your password"
-              secureTextEntry
-            />
-          </View>
+          <TouchableOpacity
+            style={styles.forgotPassword}
+            onPress={navigateToForgotPassword}
+          >
+            <Text style={styles.forgotPasswordText}>Forgot Password?</Text>
+          </TouchableOpacity>
 
           <TouchableOpacity
             style={[styles.button, isLoading && styles.buttonDisabled]}
-            onPress={handleRegister}
+            onPress={handleLogin}
             disabled={isLoading}
           >
             {isLoading ? (
               <ActivityIndicator color="#fff" />
             ) : (
-              <Text style={styles.buttonText}>Sign Up</Text>
+              <Text style={styles.buttonText}>Sign In</Text>
             )}
           </TouchableOpacity>
 
-          <View style={styles.loginContainer}>
-            <Text style={styles.loginText}>Already have an account? </Text>
-            <TouchableOpacity onPress={navigateToLogin}>
-              <Text style={styles.loginLink}>Sign In</Text>
+          <View style={styles.registerContainer}>
+            <Text style={styles.registerText}>Don't have an account? </Text>
+            <TouchableOpacity onPress={navigateToRegister}>
+              <Text style={styles.registerLink}>Sign Up</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -220,6 +181,13 @@ const styles = StyleSheet.create({
     fontSize: 16,
     backgroundColor: '#f8f8f8',
   },
+  forgotPassword: {
+    alignSelf: 'flex-end',
+  },
+  forgotPasswordText: {
+    color: Theme.colors.primary,
+    fontSize: 14,
+  },
   button: {
     height: 48,
     backgroundColor: Theme.colors.primary,
@@ -236,16 +204,16 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
   },
-  loginContainer: {
+  registerContainer: {
     flexDirection: 'row',
     justifyContent: 'center',
     marginTop: 16,
   },
-  loginText: {
+  registerText: {
     color: '#666',
     fontSize: 14,
   },
-  loginLink: {
+  registerLink: {
     color: Theme.colors.primary,
     fontSize: 14,
     fontWeight: '600',

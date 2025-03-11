@@ -102,7 +102,7 @@ export default function HomeScreen() {
   };
 
   const navigateToDetection = () => {
-    router.push('/disease-detection');
+    router.push('/(tabs)/disease-detection');
   };
 
   return (

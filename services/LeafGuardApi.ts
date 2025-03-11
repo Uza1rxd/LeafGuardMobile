@@ -1,113 +1,184 @@
-import { Platform } from 'react-native';
+import axios, { AxiosInstance, InternalAxiosRequestConfig, AxiosResponse } from 'axios';
+import { API_CONFIG } from './config';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
-// Base URL for the LeafGuard API
-let API_BASE_URL = 'https://5c2f-206-84-168-78.ngrok-free.app/api';
-
-interface DiseaseDetectionResponse {
-  disease: string;
-  confidence: number;
+interface User {
+  _id: string;
+  name: string;
+  email: string;
+  role: string;
+  isSubscribed: boolean;
+  remainingFreeScans: number;
+  token?: string;
 }
 
-interface ApiResponse<T> {
-  data?: T;
+interface DiseaseDetection {
+  disease: string;
+  confidence: number;
+  description: string;
+  symptoms: string[];
+  recommendations: string[];
+  preventions: string[];
+  imageUrl: string;
+  remainingScans: number;
   error?: string;
 }
 
-/**
- * Service for interacting with the LeafGuard API
- */
-export const LeafGuardApi = {
-  /**
-   * Check if the API is running
-   */
-  async healthCheck(): Promise<ApiResponse<{ status: string }>> {
-    try {
-      const response = await fetch(`${API_BASE_URL}/`, {
-        method: 'GET',
-        headers: {
-          'Accept': 'application/json',
-        },
-      });
-      
-      if (!response.ok) {
-        throw new Error(`API health check failed with status: ${response.status}`);
+interface SavedScan extends DiseaseDetection {
+  _id: string;
+  userId: string;
+  createdAt: string;
+  plantName: string;
+}
+
+interface SubscriptionPlan {
+  id: string;
+  name: string;
+  price: number;
+  features: string[];
+}
+
+class LeafGuardApiService {
+  private api: AxiosInstance;
+  private static instance: LeafGuardApiService;
+
+  private constructor() {
+    this.api = axios.create({
+      baseURL: API_CONFIG.BASE_URL,
+      timeout: API_CONFIG.TIMEOUT,
+      headers: API_CONFIG.HEADERS,
+    });
+
+    // Add request interceptor to attach auth token
+    this.api.interceptors.request.use(
+      async (config: InternalAxiosRequestConfig) => {
+        const token = await AsyncStorage.getItem('userToken');
+        if (token && config.headers) {
+          config.headers.Authorization = `Bearer ${token}`;
+        }
+        return config;
+      },
+      (error: unknown) => {
+        return Promise.reject(error);
       }
-      
-      const data = await response.json();
-      return { data };
-    } catch (error) {
-      console.error('API health check error:', error);
-      return { 
-        error: error instanceof Error ? error.message : 'Unknown error occurred' 
-      };
-    }
-  },
+    );
 
-  /**
-   * Predict plant disease from an image
-   * @param imageUri - The URI of the image to analyze
-   */
-  async predictDisease(imageUri: string): Promise<ApiResponse<DiseaseDetectionResponse>> {
-    try {
-      // Create form data with the image
-      const formData = new FormData();
-      
-      // Prepare the image object based on the platform
-      const filename = imageUri.split('/').pop() || 'image.jpg';
-      const match = /\.(\w+)$/.exec(filename);
-      const type = match ? `image/${match[1]}` : 'image/jpeg';
-      
-      // @ts-ignore - FormData expects a Blob but React Native uses objects
-      formData.append('image', {
-        uri: Platform.OS === 'android' ? imageUri : imageUri.replace('file://', ''),
-        name: filename,
-        type,
-      });
-
-      console.log('Making API request to:', `${API_BASE_URL}/predict/`);
-      
-      // Make the API request to the predict endpoint
-      const response = await fetch(`${API_BASE_URL}/predict/`, {
-        method: 'POST',
-        body: formData,
-        headers: {
-          'Accept': 'application/json',
-        },
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error('API Error Response:', errorText);
-        throw new Error(`API request failed with status: ${response.status}, message: ${errorText}`);
+    // Add response interceptor to handle errors
+    this.api.interceptors.response.use(
+      (response: AxiosResponse) => response,
+      async (error: unknown) => {
+        if (axios.isAxiosError(error) && error.response?.status === 401) {
+          // Handle unauthorized access (e.g., clear token and redirect to login)
+          await AsyncStorage.removeItem('userToken');
+          // You might want to trigger a navigation to login screen here
+        }
+        return Promise.reject(error);
       }
+    );
+  }
 
-      const data = await response.json();
-      console.log('API Response:', data);
-      return { data };
-    } catch (error) {
-      console.error('Disease prediction error:', error);
-      return { 
-        error: error instanceof Error ? error.message : 'Unknown error occurred' 
-      };
+  public static getInstance(): LeafGuardApiService {
+    if (!LeafGuardApiService.instance) {
+      LeafGuardApiService.instance = new LeafGuardApiService();
     }
-  },
+    return LeafGuardApiService.instance;
+  }
 
-  /**
-   * Get the current base URL for the API
-   */
-  getBaseUrl(): string {
-    return API_BASE_URL;
-  },
+  public getBaseUrl(): string {
+    return this.api.defaults.baseURL || '';
+  }
 
-  /**
-   * Update the base URL for the API
-   * @param newUrl - The new base URL for the API
-   */
-  updateBaseUrl(newUrl: string): void {
-    if (newUrl) {
-      // Remove trailing slash if present
-      API_BASE_URL = newUrl.endsWith('/') ? newUrl.slice(0, -1) : newUrl;
-      console.log(`API base URL updated to: ${API_BASE_URL}`);
-    }
-  },
-}; 
+  public async predictDisease(imageUri: string): Promise<DiseaseDetection> {
+    return this.detectDisease(imageUri);
+  }
+
+  public updateBaseUrl(newBaseUrl: string): void {
+    this.api.defaults.baseURL = newBaseUrl;
+  }
+
+  public async healthCheck(): Promise<AxiosResponse> {
+    return this.api.get('/health');
+  }
+
+  // Auth endpoints
+  async register(userData: { name: string; email: string; password: string; role?: string }): Promise<User> {
+    const response = await this.api.post<User>('/auth/register', userData);
+    return response.data;
+  }
+
+  async login(credentials: { email: string; password: string }): Promise<User> {
+    const response = await this.api.post<User>('/auth/login', credentials);
+    return response.data;
+  }
+
+  async forgotPassword(email: string): Promise<void> {
+    await this.api.post('/auth/forgot-password', { email });
+  }
+
+  // Plant disease detection
+  async detectDisease(imageUri: string): Promise<DiseaseDetection> {
+    const formData = new FormData();
+    formData.append('image', {
+      uri: imageUri,
+      type: 'image/jpeg',
+      name: 'plant.jpg',
+    } as any);
+
+    const response = await this.api.post<DiseaseDetection>('/plants/predict', formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+    });
+    return response.data;
+  }
+
+  async saveScan(scanData: Omit<SavedScan, '_id' | 'userId' | 'createdAt'>): Promise<SavedScan> {
+    const response = await this.api.post<SavedScan>('/plants/scans', scanData);
+    return response.data;
+  }
+
+  async getRecentScans(): Promise<SavedScan[]> {
+    const response = await this.api.get<{ data: SavedScan[] }>('/plants/scans');
+    return response.data.data;
+  }
+
+  // Subscription management
+  async getSubscriptionPlans(): Promise<{ data: SubscriptionPlan[] }> {
+    const response = await this.api.get<{ data: SubscriptionPlan[] }>('/subscriptions/plans');
+    return response.data;
+  }
+
+  async subscribeToPlan(planId: string, paymentId: string): Promise<{ data: { subscription: any; user: User } }> {
+    const response = await this.api.post('/subscriptions/subscribe', { planId, paymentId });
+    return response.data;
+  }
+
+  async getSubscriptionStatus(): Promise<{ data: { isSubscribed: boolean; remainingFreeScans: number; subscription: any } }> {
+    const response = await this.api.get('/subscriptions/status');
+    return response.data;
+  }
+
+  async cancelSubscription(): Promise<{ success: boolean; message: string; data: { isSubscribed: boolean; remainingFreeScans: number } }> {
+    const response = await this.api.post('/subscriptions/cancel');
+    return response.data;
+  }
+
+  // User profile and scans
+  async getUserProfile(): Promise<User> {
+    const response = await this.api.get<User>('/users');
+    return response.data;
+  }
+
+  async updateUserProfile(userData: { name?: string; email?: string; password?: string }): Promise<User> {
+    const response = await this.api.put<User>('/users', userData);
+    return response.data;
+  }
+
+  async getUserScans(): Promise<{ success: boolean; count: number; data: SavedScan[] }> {
+    const response = await this.api.get('/users/scans');
+    return response.data;
+  }
+}
+
+// Export a singleton instance
+export const LeafGuardApi = LeafGuardApiService.getInstance(); 

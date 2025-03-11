@@ -1,154 +1,103 @@
-import React, { createContext, useState, useContext, ReactNode, useEffect } from 'react';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-
-interface User {
-  id: string;
-  email: string;
-  name: string;
-  role: 'Farmer' | 'Researcher' | 'Admin';
-  remainingFreeScans: number;
-  isSubscribed: boolean;
-}
+import React, { createContext, useContext, useState, useEffect } from 'react';
+import { auth, AuthResponse } from '../services/auth';
 
 interface AuthContextType {
-  user: User | null;
+  user: Omit<AuthResponse, 'token'> | null;
   isLoading: boolean;
   isAuthenticated: boolean;
   login: (email: string, password: string) => Promise<void>;
-  register: (email: string, name: string, password: string, role: 'Farmer' | 'Researcher' | 'Admin') => Promise<void>;
+  register: (name: string, email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
   forgotPassword: (email: string) => Promise<void>;
+  updateRemainingScans: (newCount: number) => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-export const useAuth = (): AuthContextType => {
-  const context = useContext(AuthContext);
-  if (!context) {
-    throw new Error('useAuth must be used within an AuthProvider');
-  }
-  return context;
-};
-
-interface AuthProviderProps {
-  children: ReactNode;
-}
-
-export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
-  const [user, setUser] = useState<User | null>(null);
-  const [isLoading, setIsLoading] = useState<boolean>(true);
+export function AuthProvider({ children }: { children: React.ReactNode }) {
+  const [user, setUser] = useState<Omit<AuthResponse, 'token'> | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    // Check if user is logged in on app start
-    const checkUserLoggedIn = async () => {
-      try {
-        const userData = await AsyncStorage.getItem('user');
-        if (userData) {
-          setUser(JSON.parse(userData));
-        }
-      } catch (error) {
-        console.error('Error checking user login status:', error);
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
-    checkUserLoggedIn();
+    checkUser();
   }, []);
 
-  const login = async (email: string, password: string) => {
-    setIsLoading(true);
+  const checkUser = async () => {
     try {
-      // In a real app, you would make an API call to authenticate
-      // For now, we'll simulate a successful login with mock data
-      const mockUser: User = {
-        id: '1',
-        email,
-        name: 'Test User',
-        role: 'Farmer',
-        remainingFreeScans: 5,
-        isSubscribed: false,
-      };
-      
-      await AsyncStorage.setItem('user', JSON.stringify(mockUser));
-      setUser(mockUser);
+      const userData = await auth.getStoredUser();
+      setUser(userData);
     } catch (error) {
-      console.error('Login error:', error);
-      throw new Error('Login failed. Please check your credentials.');
+      console.error('Error checking user:', error);
     } finally {
       setIsLoading(false);
     }
   };
 
-  const register = async (
-    email: string, 
-    name: string, 
-    password: string, 
-    role: 'Farmer' | 'Researcher' | 'Admin'
-  ) => {
-    setIsLoading(true);
+  const login = async (email: string, password: string) => {
     try {
-      // In a real app, you would make an API call to register
-      // For now, we'll simulate a successful registration with mock data
-      const mockUser: User = {
-        id: '1',
-        email,
-        name,
-        role,
-        remainingFreeScans: 5,
-        isSubscribed: false,
-      };
-      
-      await AsyncStorage.setItem('user', JSON.stringify(mockUser));
-      setUser(mockUser);
+      const response = await auth.login(email, password);
+      const { token, ...userData } = response;
+      setUser(userData);
+    } catch (error) {
+      console.error('Login error:', error);
+      throw error;
+    }
+  };
+
+  const register = async (name: string, email: string, password: string) => {
+    try {
+      const response = await auth.register(name, email, password);
+      const { token, ...userData } = response;
+      setUser(userData);
     } catch (error) {
       console.error('Registration error:', error);
-      throw new Error('Registration failed. Please try again.');
-    } finally {
-      setIsLoading(false);
+      throw error;
     }
   };
 
   const logout = async () => {
-    setIsLoading(true);
     try {
-      await AsyncStorage.removeItem('user');
+      await auth.logout();
       setUser(null);
     } catch (error) {
       console.error('Logout error:', error);
-      throw new Error('Logout failed. Please try again.');
-    } finally {
-      setIsLoading(false);
+      throw error;
     }
   };
 
   const forgotPassword = async (email: string) => {
-    setIsLoading(true);
     try {
-      // In a real app, you would make an API call to send a password reset email
-      // For now, we'll just simulate a successful request
-      console.log(`Password reset email sent to ${email}`);
+      await auth.forgotPassword(email);
     } catch (error) {
       console.error('Forgot password error:', error);
-      throw new Error('Failed to send password reset email. Please try again.');
-    } finally {
-      setIsLoading(false);
+      throw error;
     }
   };
 
-  return (
-    <AuthContext.Provider
-      value={{
-        user,
-        isLoading,
-        isAuthenticated: !!user,
-        login,
-        register,
-        logout,
-        forgotPassword,
-      }}
-    >
-      {children}
-    </AuthContext.Provider>
-  );
-}; 
+  const updateRemainingScans = (newCount: number) => {
+    if (user) {
+      setUser({ ...user, remainingFreeScans: newCount });
+    }
+  };
+
+  const value = {
+    user,
+    isLoading,
+    isAuthenticated: !!user,
+    login,
+    register,
+    logout,
+    forgotPassword,
+    updateRemainingScans,
+  };
+
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
+}
+
+export function useAuth() {
+  const context = useContext(AuthContext);
+  if (context === undefined) {
+    throw new Error('useAuth must be used within an AuthProvider');
+  }
+  return context;
+} 
